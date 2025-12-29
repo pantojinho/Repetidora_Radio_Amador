@@ -727,19 +727,25 @@ void updateDisplay() {
       last_status_bg = status_bg;
     }
     
-    // Texto de status grande
+    // Texto de status grande - SEMPRE redesenhado para garantir visibilidade
     tft.setTextColor(status_text_color, status_bg);
     tft.setTextSize(3);
-    tft.drawCentreString(status_text, W / 2, status_y + 20, 3);
+    // Usa setCursor e print ao invés de drawCentreString para garantir funcionamento
+    int16_t status_text_w = tft.textWidth(status_text);
+    int16_t status_text_y = status_y + (85 - 24) / 2;  // Centralizado verticalmente (textSize 3 ≈ 24px altura)
+    tft.setCursor((W - status_text_w) / 2, status_text_y);
+    tft.print(status_text);
     
     // Se TX, mostra contador de QSO atual
     if (ptt_state) {
       tft.setTextSize(2);
       tft.setTextColor(TFT_WHITE, status_bg);
-      tft.drawCentreString("QSO ATUAL", W / 2, status_y + 55, 2);
+      int16_t qso_w = tft.textWidth("QSO ATUAL");
+      tft.setCursor((W - qso_w) / 2, status_y + 60);
+      tft.print("QSO ATUAL");
     } else {
       // Limpa área "QSO ATUAL" se não está em TX (evita texto fantasma)
-      tft.fillRect(W/2 - 50, status_y + 50, 100, 25, status_bg);
+      tft.fillRect(W/2 - 50, status_y + 55, 100, 25, status_bg);
     }
   
     // ========== COURTESY TONE (Abaixo do status) ==========
