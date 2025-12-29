@@ -1,4 +1,22 @@
-# Documentação - Repetidora ESP32-2432S028 (CYD)
+# Documentação Completa - Repetidora ESP32-2432S028 (CYD)
+
+## 📋 Índice
+- [Especificações da Placa](#placa-esp32-2432s028r-cheap-yellow-display)
+- [Configuração de Pinagem](#configuração-de-pinagem)
+- [Configuração do User_Setup.h](#configuração-do-user_setuph)
+- [Layout da Tela](#layout-da-tela-320x240---paisagem)
+- [Conexão com o Rádio](#conexão-com-o-rádio-repetidora-setup)
+- [Funcionalidades](#funcionalidades)
+- [Bibliotecas Necessárias](#bibliotecas-necessárias)
+- [Troubleshooting](#troubleshooting)
+- [Sistema de LED RGB](#sistema-de-led-rgb-detalhado)
+- [Guia Rápido de Instalação](#guia-rápido-de-instalação)
+- [Segurança](#segurança)
+- [Como Contribuir](#como-contribuir)
+- [Autor e Contato](#autor-e-contato)
+- [Changelog](#changelog)
+
+---
 
 ## Placa: ESP32-2432S028R (Cheap Yellow Display)
 
@@ -273,7 +291,7 @@ Speaker 8Ω      ──────────────────── JS
 - ✅ Calibrar coordenadas se necessário (ajustar map() na função handleTouchscreen)
 
 ### LED RGB não acende
-- ✅ Verificar pinos: R=4, G=26, B=27
+- ✅ Verificar pinos: R=4, G=16, B=17
 - ✅ Verificar se são LEDs comuns (cátodo comum) ou anodo comum
 - ✅ Ajustar lógica se necessário (inverter HIGH/LOW)
 
@@ -323,7 +341,7 @@ Speaker 8Ω      ──────────────────── JS
 
 ## Notas Técnicas
 
-- **Frequência SPI**: 20MHz (otimizada para estabilidade, evita artifacts no CYD)
+- **Frequência SPI**: 27MHz (otimizada para estabilidade, evita artifacts no CYD)
 - **Touchscreen**: Verificação contínua no loop com debounce
 - **Áudio I2S**: GPIO26, sample rate 22050Hz, volume 0.70
 - **Memória**: Código otimizado (sem String, usa snprintf)
@@ -420,7 +438,121 @@ O LED RGB fornece feedback visual instantâneo sobre o status da repetidora:
 
 ---
 
-## Changelog
+## 🚀 Guia Rápido de Instalação
+
+### Pré-requisitos
+- ESP32-2432S028R (CYD)
+- Arduino IDE 2.x
+- Rádio com COR e PTT
+- Cabo USB-C
+
+### Instalação (5 minutos)
+
+**1. Adicionar suporte ESP32:**
+- Arduino IDE → File → Preferences
+- URL: `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
+- Board Manager → Instalar "esp32 by Espressif Systems"
+
+**2. Instalar bibliotecas:**
+- Library Manager → TFT_eSPI (Bodmer)
+- Library Manager → XPT2046_Touchscreen
+
+**3. Configurar TFT_eSPI:**
+- Editar `Arduino/libraries/TFT_eSPI/User_Setup.h`
+- Usar configurações do projeto (ver seção [Configuração do User_Setup.h](#configuração-do-user_setuph))
+
+**4. Carregar o código:**
+- Abrir `RPT2ESP32-com33beep.ino`
+- Carregar no ESP32
+
+### Conexão com Rádio
+
+```
+Rádio RX (COR) → GPIO22 (P3/CN1)
+Rádio TX (PTT) → GPIO27 (CN1)
+GND Comum       → GND
+Speaker 8Ω      → JST 2-pin (GPIO26)
+```
+
+⚠️ **Importante**: Use level shifter se rádio é 5V+
+
+### Uso
+- **Toque na tela**: Troca courtesy tone
+- **LED RGB**: Indica status (TX/RX/Idle)
+- **Display**: Mostra estatísticas em tempo real
+
+---
+
+## 🔒 Segurança
+
+### Hardware
+- Use **level shifters** ao conectar com rádios de 5V
+- Mantenha **GND comum** entre todos os dispositivos
+- Use **fontes de alimentação** estáveis
+
+### Software
+- Código totalmente **transparente e auditável**
+- **NÃO coleta** dados de uso ou telemetria
+- Usuário tem **controle total** do dispositivo
+
+### Reportar Vulnerabilidades
+- Use o [GitHub Security Advisory](https://github.com/pantojinho/Repetidora_Radio_Amador/security/advisories)
+- NÃO abra issues públicas para vulnerabilidades
+- Seremos notificados e corrigiremos o problema
+
+---
+
+## 🤝 Como Contribuir
+
+Quer contribuir? Fork, clone e faça um Pull Request:
+
+```bash
+git clone https://github.com/pantojinho/Repetidora_Radio_Amador.git
+# Faça suas mudanças
+git commit -m "Descrição clara"
+git push origin main
+```
+
+- 🐛 Reportar bugs: [Issues](https://github.com/pantojinho/Repetidora_Radio_Amador/issues)
+- 💡 Sugerir melhorias: [Issues](https://github.com/pantojinho/Repetidora_Radio_Amador/issues)
+- 🛠️ Enviar código: [Pull Requests](https://github.com/pantojinho/Repetidora_Radio_Amador/pulls)
+
+---
+
+## 👤 Autor e Contato
+
+**Gabriel Ciandrini** - **PU2PEG**
+
+Radioamador brasileiro e desenvolvedor de projetos para a comunidade.
+
+- 📻 **Indicativo**: PU2PEG
+- 💻 **GitHub**: [pantojinho](https://github.com/pantojinho)
+- 🌐 **Repositório**: [github.com/pantojinho/Repetidora_Radio_Amador](https://github.com/pantojinho/Repetidora_Radio_Amador)
+
+### Sobre o Projeto
+
+Desenvolvido como um projeto open source para a comunidade de rádio amador, com foco em:
+
+- Transparência de código (totalmente auditável)
+- Documentação detalhada em português
+- Interface visual moderna e profissional
+- Fácil de configurar e usar
+
+### Contato
+
+Para questões sobre o projeto:
+- 📧 GitHub Issues: [pantojinho/Repetidora_Radio_Amador/issues](https://github.com/pantojinho/Repetidora_Radio_Amador/issues)
+- 💬 GitHub Discussions: [pantojinho/Repetidora_Radio_Amador/discussions](https://github.com/pantojinho/Repetidora_Radio_Amador/discussions)
+
+---
+
+## 📜 Licença
+
+Este projeto está licenciado sob a [Licença MIT](LICENSE).
+
+---
+
+## 📅 Changelog
 
 ### v2.1 (Atual - LED RGB Implementado e Documentação Atualizada)
 - ✅ **LED RGB completo como indicador de status**:
@@ -452,4 +584,14 @@ O LED RGB fornece feedback visual instantâneo sobre o status da repetidora:
 - Estatísticas em colunas
 - Otimização anti-flicker
 
+---
 
+<div align="center">
+
+**📡 Gabriel Ciandrini - PU2PEG**
+
+Feito com ❤️ para a comunidade de rádio amador
+
+73! 📻
+
+</div>
