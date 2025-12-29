@@ -1,0 +1,112 @@
+# ==========================================
+# Gitignore - Repetidora de Rádio Amador
+# ==========================================
+
+# Arduino
+*.tmp
+*.c.~
+*.cpp.~
+*.h.~
+*.pde.~
+*.ino.~
+*.o
+*.elf
+*.hex
+*.bin
+*.map
+*.d
+*.a
+
+# Arduino IDE
+.vscode/
+.arduino/
+user/
+hardware/
+
+# ESP32
+.partitions.bin
+.bootloader.bin
+firmware.bin
+
+# Logs
+*.log
+debug.log
+/logs/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+
+# IDEs e Editores
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.settings/
+
+# Build e Outputs
+/build/
+/out/
+/dist/
+/build-*/
+
+# Espiff e Partitions
+spiffs/
+partitions.csv
+
+# Backup e Temp
+*.bak
+*.backup
+*.old
+*.orig
+*~
+
+# Python (se usado para scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# Node.js (se usado)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Sistema Operacional
+# Windows
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# Documentação gerada
+docs/html/
+docs/pdf/
+
+# Arquivos de dados pessoais
+data/*
+!data/.gitkeep
+
+# Arquivos de configuração sensíveis
+secrets.h
+config.local.h
+
