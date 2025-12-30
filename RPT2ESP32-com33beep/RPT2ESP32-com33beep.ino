@@ -28,33 +28,46 @@
 // - IMPORTANTE: Valores são invertidos (255 - valor) porque é active low
 //
 // ESTADOS DO LED (correspondem às cores do display):
-// 1. TRANSMITINDO (TX ativo):
+// 1. WIFI ATIVO (show_ip_screen = true):
+//    - Cor: AZUL FIXO
+//    - Pino R: 255 (apagado)
+//    - Pino G: 255 (apagado)
+//    - Pino B: 0 (acende - active low)
+//    - Animação: Nenhuma (cor sólida)
+//    - Uso: Indica que a tela de Wi-Fi está ativa
+//
+// 2. TRANSMITINDO (TX ativo):
 //    - Cor: VERMELHO FIXO (mesma cor do display vermelho)
 //    - Pino R: 0 (acende - active low)
 //    - Pino G: 255 (apagado)
 //    - Pino B: 255 (apagado)
 //    - Animação: Nenhuma (cor sólida)
+//    - Uso: Indica que está transmitindo
 //
-// 2. RECEBENDO (COR ativo, RX):
+// 3. RECEBENDO (COR ativo, RX):
 //    - Cor: AMARELO (mesma cor do display amarelo)
 //    - Pino R: 0 (acende - active low)
 //    - Pino G: 0 (acende - active low)
 //    - Pino B: 255 (apagado)
-//    - Animação: Pode ser fixo ou pulsante (conforme padrão original)
+//    - Animação: Cor fixa amarela
+//    - Uso: Indica que está recebendo sinal
 //
-// 3. ESPERA/IDLE (sem sinal):
-//    - Cor: VERDE (mesma cor do display verde escuro)
+// 4. EM ESCUTA/IDLE (sem sinal):
+//    - Cor: VERDE (mesma cor do display verde)
 //    - Pino R: 255 (apagado)
 //    - Pino G: 0 (acende - active low)
 //    - Pino B: 255 (apagado)
-//    - Animação: Cor fixa verde (não rainbow)
+//    - Animação: Cor fixa verde
+//    - Uso: Indica que está em espera
 //
 // FUNÇÕES DO LED RGB:
-// - updateLED(): Atualiza LED baseado no estado atual (TX/RX/Idle)
-// - Cores fixas: Verde (idle), Amarelo (RX), Vermelho (TX)
+// - updateLED(): Atualiza LED baseado no estado atual (Wi-Fi/TX/RX/Idle)
+// - Cores fixas: Azul (Wi-Fi), Vermelho (TX), Amarelo (RX), Verde (Idle)
+// - Segue a mesma lógica de prioridade do display
 //
 // UTILIDADE PRÁTICA:
 // - Feedback visual instantâneo sem precisar olhar para o display
+// - Azul fixo: Tela de Wi-Fi ativa
 // - Vermelho fixo: Indica transmissão ativa (evite falar)
 // - Amarelo fixo: Alguém transmitindo no canal (RX ativo)
 // - Verde fixo: Canal livre, repetidora em espera (idle)
@@ -607,7 +620,7 @@ String generateConfigPage() {
   html += "<div class='container'>";
   html += "<div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;'>";
   html += "<h1 style='margin: 0;'>📡 Configuração da Repetidora</h1>";
-  html += "<button id='langBtn' onclick='toggleLanguage()' class='btn' style='padding: 8px 15px; font-size: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);'>🌐 PT</button>";
+  html += "<button id='langBtn' onclick='toggleLanguage()' class='btn' style='padding: 2px 5px; font-size: 8px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-width: 25px;'>🌐 PT</button>";
   html += "</div>";
 
   // Status do sistema
@@ -707,9 +720,9 @@ String generateConfigPage() {
 
   // Configurações de Courtesy Tone
   html += "<div class='section'>";
-  html += "<h2>🔔 Courtesy Tone (CT)</h2>";
+  html += "<h2 data-pt='▲ Courtesy Tone (CT)' data-en='▲ Courtesy Tone (CT)'>▲ Courtesy Tone (CT)</h2>";
   html += "<div class='field'>";
-  html += "<label for='ct_index'>Selecione o Courtesy Tone:</label>";
+  html += "<label for='ct_index' data-pt='Selecione o Courtesy Tone:' data-en='Select Courtesy Tone:'>Selecione o Courtesy Tone:</label>";
   html += "<select id='ct_index' name='ct_index'>";
 
   // Gera lista dos 33 CTs
@@ -727,26 +740,26 @@ String generateConfigPage() {
 
   // Botões de ação
   html += "<div class='btn-group'>";
-  html += "<button type='button' class='btn btn-primary' onclick='saveConfig()'>💾 Salvar e Reiniciar</button>";
+  html += "<button type='button' class='btn btn-primary' onclick='saveConfig()' data-pt='💾 Salvar e Reiniciar' data-en='💾 Save and Restart'>💾 Salvar e Reiniciar</button>";
   html += "</div>";
 
   html += "<div class='btn-group'>";
-  html += "<button type='button' class='btn btn-secondary' onclick='restartDevice()'>🔄 Reiniciar Dispositivo</button>";
-  html += "<button type='button' class='btn btn-info' onclick='toggleDebug()'>📋 Ver Console Debug</button>";
+  html += "<button type='button' class='btn btn-secondary' onclick='restartDevice()' data-pt='🔄 Reiniciar Dispositivo' data-en='🔄 Restart Device'>🔄 Reiniciar Dispositivo</button>";
+  html += "<button type='button' class='btn btn-info' onclick='toggleDebug()' data-pt='📋 Ver Console Debug' data-en='📋 View Debug Console'>📋 Ver Console Debug</button>";
   html += "</div>";
 
   html += "<div class='btn-group'>";
-  html += "<button type='button' class='btn btn-secondary' style='background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%);' onclick='resetFactory()'>⚠️ Reset de Fábrica</button>";
+  html += "<button type='button' class='btn btn-secondary' style='background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%);' onclick='resetFactory()' data-pt='⚠️ Reset de Fábrica' data-en='⚠️ Factory Reset'>⚠️ Reset de Fábrica</button>";
   html += "</div>";
 
   // Área de debug (oculta por padrão)
   html += "<div id='debug_area' class='section' style='display:none;'>";
-  html += "<h2>📋 Console de Debug (Serial Monitor)</h2>";
-  html += "<p style='color: #aaa; font-size: 12px; margin-bottom: 10px;'>Últimas linhas do arquivo de log (atualiza a cada 2 segundos):</p>";
-  html += "<textarea id='debug_console' rows='20' readonly style='font-family: monospace; font-size: 11px; background: #000; color: #0f0; padding: 10px; border: 1px solid #333; border-radius: 5px; width: 100%; box-sizing: border-box;'>";
-  html += "Carregando logs...";
+  html += "<h2 data-pt='📋 Console de Debug' data-en='📋 Debug Console'>📋 Console de Debug</h2>";
+  html += "<p style='color: #aaa; font-size: 12px; margin-bottom: 10px;' data-pt='Eventos importantes: TX, WiFi, Erros (atualiza a cada 2 segundos)' data-en='Important events: TX, WiFi, Errors (updates every 2 seconds)'>Eventos importantes: TX, WiFi, Erros (atualiza a cada 2 segundos)</p>";
+  html += "<textarea id='debug_console' rows='15' readonly style='font-family: monospace; font-size: 10px; background: #000; color: #0f0; padding: 10px; border: 1px solid #333; border-radius: 5px; width: 100%; box-sizing: border-box; line-height: 1.4;'>";
+  html += "Carregando eventos...";
   html += "</textarea>";
-  html += "<p style='color: #888; font-size: 11px; margin-top: 5px;'>💡 Dica: Os logs são salvos em /debug.log no LittleFS. Use o Serial Monitor (115200 baud) para ver logs em tempo real.</p>";
+  html += "<p style='color: #888; font-size: 11px; margin-top: 5px;' data-pt='💡 Mostra apenas eventos importantes. Use o Serial Monitor (115200 baud) para logs completos.' data-en='💡 Shows only important events. Use Serial Monitor (115200 baud) for complete logs.'>💡 Mostra apenas eventos importantes. Use o Serial Monitor (115200 baud) para logs completos.</p>";
   html += "</div>";
 
   // Footer
@@ -821,11 +834,31 @@ String generateConfigPage() {
   html += "        if(!console) { console.error('Elemento debug_console não encontrado'); return; }";
   html += "        if(data && data.trim().length > 0) {";
   html += "          var lines = data.split('\\n');";
-  html += "          var lastLines = lines.slice(-50).join('\\n');";
-  html += "          console.value = lastLines;";
+  html += "          var filtered = [];";
+  html += "          var importantTags = ['[TX]', '[WIFI]', '[WEB]', '[BOOT]', '[ERROR]', '[CONFIG]', 'TX', 'RX', 'PTT', 'Erro', 'Error', 'WiFi', 'WIFI', 'AP', 'Connected', 'Disconnected'];";
+  html += "          for(var i = 0; i < lines.length; i++) {";
+  html += "            var line = lines[i].trim();";
+  html += "            if(line.length === 0) continue;";
+  html += "            var isImportant = false;";
+  html += "            for(var j = 0; j < importantTags.length; j++) {";
+  html += "              if(line.indexOf(importantTags[j]) !== -1) {";
+  html += "                isImportant = true;";
+  html += "                break;";
+  html += "              }";
+  html += "            }";
+  html += "            if(isImportant) {";
+  html += "              filtered.push(line);";
+  html += "            }";
+  html += "          }";
+  html += "          if(filtered.length === 0) {";
+  html += "            console.value = 'Nenhum evento importante encontrado ainda.\\n\\nAguardando eventos de TX, WiFi ou erros...';";
+  html += "          } else {";
+  html += "            var lastEvents = filtered.slice(-30).join('\\n');";
+  html += "            console.value = lastEvents;";
+  html += "          }";
   html += "          console.scrollTop = console.scrollHeight;";
   html += "        } else {";
-  html += "          console.value = 'Nenhum log disponível ainda.\\n\\nOs logs aparecerão aqui quando houver atividade.\\nUse o Serial Monitor (115200 baud) para ver logs em tempo real.';";
+  html += "          console.value = 'Nenhum log disponível ainda.\\n\\nAguardando eventos importantes (TX, WiFi, Erros)...';";
   html += "        }";
   html += "      })";
   html += "      .catch(error => {";
@@ -869,7 +902,10 @@ String generateConfigPage() {
   html += "    'debug': '📋 Ver Console Debug',";
   html += "    'factory': '⚠️ Reset de Fábrica',";
   html += "    'footer': 'Repetidora ESP32-2432S028R - Versão 2.3',";
-  html += "    'author': 'Desenvolvido por: PU2PEG - Gabriel'";
+  html += "    'author': 'Desenvolvido por: PU2PEG - Gabriel',";
+  html += "    'debug_title': '📋 Console de Debug',";
+  html += "    'debug_desc': 'Eventos importantes: TX, WiFi, Erros (atualiza a cada 2 segundos)',";
+  html += "    'debug_tip': '💡 Mostra apenas eventos importantes. Use o Serial Monitor (115200 baud) para logs completos.'";
   html += "  },";
   html += "  en: {";
   html += "    'title': '📡 Repeater Configuration',";
@@ -899,7 +935,10 @@ String generateConfigPage() {
   html += "    'debug': '📋 View Debug Console',";
   html += "    'factory': '⚠️ Factory Reset',";
   html += "    'footer': 'ESP32-2432S028R Repeater - Version 2.3',";
-  html += "    'author': 'Developed by: PU2PEG - Gabriel'";
+  html += "    'author': 'Developed by: PU2PEG - Gabriel',";
+  html += "    'debug_title': '📋 Debug Console',";
+  html += "    'debug_desc': 'Important events: TX, WiFi, Errors (updates every 2 seconds)',";
+  html += "    'debug_tip': '💡 Shows only important events. Use Serial Monitor (115200 baud) for complete logs.'";
   html += "  }";
   html += "};";
   html += "function applyTranslations(lang) {";
@@ -907,14 +946,32 @@ String generateConfigPage() {
   html += "  var t = translations[lang];";
   html += "  document.querySelector('h1').textContent = t.title;";
   html += "  document.getElementById('langBtn').textContent = lang === 'pt' ? '🌐 EN' : '🌐 PT';";
+  html += "  var debugTitle = document.querySelector('#debug_area h2');";
+  html += "  if(debugTitle) debugTitle.textContent = t.debug_title;";
+  html += "  var debugDesc = document.querySelector('#debug_area p');";
+  html += "  if(debugDesc && debugDesc.hasAttribute('data-pt')) {";
+  html += "    debugDesc.textContent = lang === 'pt' ? debugDesc.getAttribute('data-pt') : debugDesc.getAttribute('data-en');";
+  html += "  }";
+  html += "  var debugTip = document.querySelectorAll('#debug_area p');";
+  html += "  if(debugTip.length > 1 && debugTip[1].hasAttribute('data-pt')) {";
+  html += "    debugTip[1].textContent = lang === 'pt' ? debugTip[1].getAttribute('data-pt') : debugTip[1].getAttribute('data-en');";
+  html += "  }";
   html += "  var elements = document.querySelectorAll('[data-pt]');";
   html += "  elements.forEach(function(el) {";
   html += "    var attr = lang === 'pt' ? 'data-pt' : 'data-en';";
   html += "    if(el.hasAttribute(attr)) {";
-  html += "      if(el.tagName === 'LABEL' || el.tagName === 'H2' || el.tagName === 'DIV') {";
-  html += "        el.textContent = el.getAttribute(attr);";
+  html += "      var text = el.getAttribute(attr);";
+  html += "      if(el.tagName === 'LABEL') {";
+  html += "        var span = el.querySelector('span');";
+  html += "        if(span) {";
+  html += "          el.innerHTML = text + ' ' + span.outerHTML;";
+  html += "        } else {";
+  html += "          el.textContent = text;";
+  html += "        }";
+  html += "      } else if(el.tagName === 'H2' || el.tagName === 'DIV' || el.tagName === 'BUTTON') {";
+  html += "        el.textContent = text;";
   html += "      } else if(el.tagName === 'OPTION') {";
-  html += "        el.textContent = el.getAttribute(attr);";
+  html += "        el.textContent = text;";
   html += "      }";
   html += "    }";
   html += "  });";
@@ -1695,47 +1752,62 @@ void setPTT(bool on) {
  * @brief Atualiza o LED RGB baseado no estado atual da repetidora
  *
  * Esta função controla a cor e o comportamento do LED RGB de acordo
- * com o estado da repetidora (TX ativo, RX ativo, ou idle).
+ * com o estado da repetidora, seguindo a mesma lógica do display.
  *
- * Estados implementados:
- * 1. TX Ativo (ptt_state = true):
- *    - Cor: Vermelho fixo (sólido)
- *    - Comportamento: Sem animação
+ * Estados implementados (seguem a mesma ordem de prioridade do display):
+ * 1. Wi-Fi Ativo (show_ip_screen = true):
+ *    - Cor: Azul fixo
+ *    - Uso: Indica que a tela de Wi-Fi está ativa
+ *
+ * 2. TX Ativo (tx_mode != TX_NONE ou ptt_state = true):
+ *    - Cor: Vermelho fixo (mesma cor do display vermelho)
  *    - Uso: Indica que está transmitindo
  *
- * 2. RX Ativo (cor_stable = true && ptt_state = false):
- *    - Cor: Amarelo com efeito breathing
- *    - Comportamento: Pulsante (breathing effect)
+ * 3. RX Ativo (cor_stable = true):
+ *    - Cor: Amarelo (mesma cor do display amarelo)
  *    - Uso: Indica que está recebendo sinal
  *
- * 3. Idle (cor_stable = false && ptt_state = false):
- *    - Cor: Verde fixo (mesma cor do display verde escuro)
- *    - Comportamento: Cor sólida verde
+ * 4. EM ESCUTA (idle):
+ *    - Cor: Verde fixo (mesma cor do display verde)
  *    - Uso: Indica que está em espera
  *
  * Nota: Esta função deve ser chamada continuamente no loop principal
- *       para manter animações atualizadas
+ *       para manter o LED sincronizado com o display
  *
  * @see loop() onde esta função é chamada
+ * @see updateDisplay() para lógica de estados do display
  */
 void updateLED() {
   if (ledc_channel_r < 0 || ledc_channel_g < 0 || ledc_channel_b < 0) return;  // Não inicializado
   
-  if (ptt_state) {
+  // Prioridade 1: Wi-Fi ativo (tela de Wi-Fi mostrando)
+  if (show_ip_screen) {
+    // Wi-Fi ativo: Azul fixo
+    // ACTIVE LOW: 0 = acende, 255 = apaga
+    ledcWrite(ledc_channel_r, 255);  // Vermelho apagado (HIGH)
+    ledcWrite(ledc_channel_g, 255);  // Verde apagado (HIGH)
+    ledcWrite(ledc_channel_b, 0);    // Azul acende (LOW)
+  }
+  // Prioridade 2: TX ativo (qualquer modo de transmissão)
+  else if (tx_mode != TX_NONE || ptt_state) {
     // TX ativo: Vermelho fixo (mesma cor do display vermelho)
     // ACTIVE LOW: 0 = acende, 255 = apaga
     ledcWrite(ledc_channel_r, 0);    // Vermelho acende (LOW)
     ledcWrite(ledc_channel_g, 255); // Verde apagado (HIGH)
     ledcWrite(ledc_channel_b, 255);  // Azul apagado (HIGH)
-  } else if (cor_stable) {
+  }
+  // Prioridade 3: RX ativo (sinal recebido)
+  else if (cor_stable) {
     // RX ativo: Amarelo (mesma cor do display amarelo)
     // ACTIVE LOW: 0 = acende, 255 = apaga
     // Amarelo = Vermelho + Verde (ambos acendem)
     ledcWrite(ledc_channel_r, 0);    // Vermelho acende (LOW)
     ledcWrite(ledc_channel_g, 0);    // Verde acende (LOW)
     ledcWrite(ledc_channel_b, 255);  // Azul apagado (HIGH)
-  } else {
-    // Idle: Verde (mesma cor do display verde escuro)
+  }
+  // Prioridade 4: EM ESCUTA (idle)
+  else {
+    // EM ESCUTA: Verde fixo (mesma cor do display verde)
     // ACTIVE LOW: 0 = acende, 255 = apaga
     ledcWrite(ledc_channel_r, 255);  // Vermelho apagado (HIGH)
     ledcWrite(ledc_channel_g, 0);    // Verde acende (LOW)
