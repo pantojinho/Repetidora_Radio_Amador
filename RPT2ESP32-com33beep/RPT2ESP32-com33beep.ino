@@ -20,22 +20,22 @@
 //
 // CONFIGURAÇÃO HARDWARE:
 // - Pinos: GPIO4 (R), GPIO16 (G), GPIO17 (B)
-// - Tipo: Anodo Comum (LOW = acende, HIGH = apaga)
+// - Tipo: Cátodo Comum (HIGH = acende, LOW = apaga)
 // - Controle: PWM via LEDC do ESP32 (freq=5kHz, 8 bits)
 //
 // ESTADOS DO LED:
 // 1. TRANSMITINDO (TX ativo):
 //    - Cor: VERMELHO FIXO
-//    - Pino R: 0 (full brilho)
-//    - Pino G: 255 (apagado)
-//    - Pino B: 255 (apagado)
+//    - Pino R: 255 (full brilho)
+//    - Pino G: 0 (apagado)
+//    - Pino B: 0 (apagado)
 //    - Animação: Nenhuma (cor sólida)
 //
 // 2. RECEBENDO (COR ativo, RX):
 //    - Cor: AMARELO PULSANTE (breathing effect)
 //    - Pino R: Variável (0-255, sincronizado)
 //    - Pino G: Variável (0-255, sincronizado)
-//    - Pino B: 255 (apagado)
+//    - Pino B: 0 (apagado)
 //    - Animação: Breathing usando sin(millis()/500.0)
 //
 // 3. ESPERA/IDLE (sem sinal):
@@ -119,7 +119,7 @@ XPT2046_Touchscreen ts(TOUCH_CS);
 #define PIN_BL  21  // Backlight (não mudar - sempre HIGH)
 #define SPEAKER_PIN 26  // Speaker onboard via JST 2-pin connector
 
-// LED RGB pins (anodo comum - LOW = acende, HIGH = apaga)
+// LED RGB pins (cátodo comum - HIGH = acende, LOW = apaga)
 #define PIN_LED_R 4
 #define PIN_LED_G 16
 #define PIN_LED_B 17
@@ -130,6 +130,14 @@ const char* CALLSIGN = "PY2KEP SP";
 #define SAMPLE_RATE 22050
 #define HANG_TIME_MS 600
 float VOLUME = 0.70f;
+
+// Constantes para CW (Morse)
+#define CW_WPM 13        // Velocidade em palavras por minuto
+#define CW_FREQ 600      // Frequência em Hz para tom CW
+
+// Intervalos de Identificação Automática (ID Voice/CW)
+const uint32_t VOICE_INTERVAL_MS = 11UL*60UL*1000UL;  // 11 minutos - ID em voz
+const uint32_t CW_INTERVAL_MS   = 16UL*60UL*1000UL;  // 16 minutos - ID em CW
 
 // ====================== GLOBAIS ======================
 bool cor_stable = false;
@@ -144,6 +152,14 @@ unsigned long last_uptime_update = 0;  // Timer separado para uptime
 bool first_draw = true;  // Flag para primeira renderização completa (evita flash)
 bool needsFullRedraw = false;  // Flag para redraw completo quando necessário
 char old_uptime_str[16] = "";  // String do uptime anterior (para comparar e só atualizar se mudou)
+
+// Estados de identificação (ID Voice/CW)
+enum TxMode { TX_NONE, TX_RX, TX_VOICE, TX_CW };
+TxMode tx_mode = TX_NONE;  // Tipo de transmissão ativa
+
+// Timers para Identificação Automática (ID Voice/CW)
+unsigned long last_voice = 0;      // Última identificação em voz
+unsigned long last_cw    = 0;      // Última identificação em CW (Morse)
 
 // ====================== VARIÁVEIS DO LED RGB ======================
 // Sistema de controle do LED RGB usando PWM (LED Control do ESP32)
@@ -388,6 +404,162 @@ void playCT() {
   playing = false;
 }
 
+/**
+ * @brief Reproduz arquivo WAV do SPIFFS (para indicativo de voz)
+ *
+ * Esta função lê um arquivo WAV do sistema de arquivos SPIFFS e
+ * reproduz através do speaker via I2S. É usada para tocar o
+ * indicativo da repetidora (callsign voice).
+ *
+ * Formato esperado do arquivo WAV:
+ * - Sample Rate: 8000 Hz (conforme nome do arquivo: 8k)
+ * - Bit Depth: 16-bit PCM
+ * - Canais: Mono (1 canal)
+ *
+ * @param filename Nome do arquivo no SPIFFS (ex: "/id_voz_8k16.wav")
+ *
+ * @see playCT() para courtesy tones gerados por código
+ * @see setup() onde SPIFFS é inicializado
+ */
+void playVoiceFile(const char* filename) {
+  // Abre arquivo WAV do SPIFFS
+  File file = SPIFFS.open(filename, FILE_READ);
+  if (!file) {
+    Serial.printf("ERRO: Não foi possível abrir arquivo: %s\n", filename);
+    return;
+  }
+
+  Serial.printf("Tocando arquivo de voz: %s (%d bytes)\n", filename, file.size());
+
+  // Configura I2S para 8000 Hz (taxa do arquivo de voz)
+  i2s_init(8000);
+  playing = true;
+
+  // Tamanho do header WAV (44 bytes) - pula direto para os dados PCM
+  const int WAV_HEADER_SIZE = 44;
+  file.seek(WAV_HEADER_SIZE);
+
+  // Buffer de leitura do áudio
+  const size_t bufferSize = 1024;
+  int16_t audioBuffer[bufferSize];
+  uint16_t i2sBuffer[bufferSize * 2];  // Duplicado para I2S estéreo
+
+  // Lê e reproduz o arquivo em chunks
+  size_t bytesRead;
+  while ((bytesRead = file.read((uint8_t*)audioBuffer, bufferSize * 2)) > 0) {
+    // Converte mono para estéreo duplicando cada amostra
+    for (size_t i = 0; i < bytesRead / 2; i++) {
+      // Converte de unsigned (0-65535) para signed (-32768 a 32767)
+      int16_t sample = (int16_t)((uint16_t)audioBuffer[i] - 32768);
+      // Aplica volume
+      sample = (int16_t)(sample * VOLUME);
+      // Formata para I2S (16-bit, duplica para estéreo)
+      uint16_t sample16 = (uint16_t)(sample + 32768);
+      i2sBuffer[i * 2] = sample16;
+      i2sBuffer[i * 2 + 1] = sample16;
+    }
+
+    // Escreve via I2S
+    size_t bytesWritten;
+    i2s_write(I2S_NUM_0, i2sBuffer, bytesRead * 2, &bytesWritten, portMAX_DELAY);
+
+    // Reseta watchdog para evitar timeout durante reprodução
+    esp_task_wdt_reset();
+  }
+
+  file.close();
+
+  // Limpeza: para I2S após reprodução
+  delay(50);  // Pequeno delay para garantir que o áudio acabou
+  i2s_driver_uninstall(I2S_NUM_0);
+  i2s_ok = false;
+  playing = false;
+
+  Serial.println("Reprodução de voz concluída");
+}
+
+/**
+ * @brief Reproduz texto em código Morse (CW - Continuous Wave)
+ *
+ * Esta função converte um texto (tipicamente o callsign) em código
+ * Morse e o reproduz via I2S. É usada para identificação
+ * automática da repetidora em intervalos regulares.
+ *
+ * Formato:
+ * - Velocidade: 13 WPM (definido por CW_WPM)
+ * - Frequência: 600 Hz (definido por CW_FREQ)
+ * - Espaçamento: Padrão internacional Morse
+ *
+ * @param txt Texto para reproduzir em Morse (ex: "PY2KEP SP")
+ *
+ * @see synthDualTone() para geração de cada som
+ */
+void playCW(const String &txt) {
+  if (playing) return;
+
+  Serial.printf("Reproduzindo em CW (Morse): %s\n", txt.c_str());
+
+  // Inicializa I2S para áudio
+  i2s_init(SAMPLE_RATE);
+  playing = true;
+
+  // Calcula duração de um ponto (dot) baseado em WPM
+  uint32_t dotDuration = 1200 / CW_WPM;  // 1200 = velocidade padrão
+
+  // Loop através de cada caracter
+  for (size_t i = 0; i < txt.length(); i++) {
+    char c = toupper(txt[i]);
+
+    // Verifica se o caractere está no dicionário Morse
+    bool found = false;
+    const char* code = nullptr;
+
+    // Tabela Morse simplificada
+    const char* morse_map[36] = {
+      ".-","-...","-.-.","---..","..-.",".--.","--.-","....","..",".---","-.-.",".-..","--..","-.--","---.",".--.","-..-",".--.","-.--","--..","-----",".----","..---","...--","....-",".....","-....","--...","---..","----."
+    };
+    const char* chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+    for (int j = 0; j < 36; j++) {
+      if (c == chars[j]) {
+        code = morse_map[j];
+        found = true;
+        break;
+      }
+    }
+
+    if (found && code) {
+      // Para cada ponto ou traço no código Morse
+      for (size_t j = 0; code[j] != '\0'; j++) {
+        // Determina duração: 3 * dot para traço, 1 * dot para ponto
+        uint32_t duration = code[j] == '.' ? dotDuration : (3 * dotDuration);
+
+        // Gera tom em 600 Hz
+        synthDualTone(CW_FREQ, 0, duration);
+
+        // Delay entre pontos/traços
+        delay(dotDuration);
+      }
+
+      // Delay entre caracteres (3 pontos)
+      delay(3 * dotDuration);
+    } else if (c == ' ') {
+      // Espaço entre palavras (7 pontos)
+      delay(7 * dotDuration);
+    }
+  }
+
+  // Delay final
+  delay(50);
+
+  // Limpeza: para I2S após reprodução
+  i2s_driver_uninstall(I2S_NUM_0);
+  i2s_ok = false;
+  playing = false;
+
+  Serial.println("Reprodução CW concluída");
+}
+
 // ====================== LED RGB ========================
 
 /**
@@ -407,8 +579,8 @@ void playCT() {
  * 4. Adiciona offset (m) para ajustar brilho
  * 5. Converte para 0-255 e aplica via PWM
  *
- * Nota importante: LED usa anodo comum, então valores são invertidos
- * (255 - valor) porque LOW = acende, HIGH = apaga
+ * Nota importante: LED usa cátodo comum, então valores são aplicados diretamente
+ * (0 = apagado, 255 = full brilho) porque HIGH = acende, LOW = apaga
  *
  * @see updateLED() para controle de estados do LED
  */
@@ -449,10 +621,10 @@ void setColorFromHue(float h) {
   int blue  = (int)((b + m) * 255);
 
   // Aplica valores ao LED via PWM
-  // INVERTE valores porque é anodo comum (255 = apagado, 0 = full brilho)
-  if (ledc_channel_r >= 0) ledcWrite(ledc_channel_r, 255 - red);
-  if (ledc_channel_g >= 0) ledcWrite(ledc_channel_g, 255 - green);
-  if (ledc_channel_b >= 0) ledcWrite(ledc_channel_b, 255 - blue);
+  // Cátodo comum: valores aplicados diretamente (0 = apagado, 255 = full brilho)
+  if (ledc_channel_r >= 0) ledcWrite(ledc_channel_r, red);
+  if (ledc_channel_g >= 0) ledcWrite(ledc_channel_g, green);
+  if (ledc_channel_b >= 0) ledcWrite(ledc_channel_b, blue);
 }
 
 /**
@@ -489,18 +661,18 @@ void updateLED() {
   if (ptt_state) {
     // TX ativo: Vermelho fixo
     led_rainbow_enabled = false;
-    ledcWrite(ledc_channel_r, 0);    // Vermelho full
-    ledcWrite(ledc_channel_g, 255);  // Verde apagado
-    ledcWrite(ledc_channel_b, 255);  // Azul apagado
+    ledcWrite(ledc_channel_r, 255);  // Vermelho full
+    ledcWrite(ledc_channel_g, 0);    // Verde apagado
+    ledcWrite(ledc_channel_b, 0);    // Azul apagado
   } else if (cor_stable) {
     // RX ativo: Amarelo pulsante (breathing)
     led_rainbow_enabled = false;
     // Breathing effect usando seno
     float brightness = (sin(millis() / 500.0) + 1.0) / 2.0;  // 0 a 1
     int val = (int)(brightness * 255);
-    ledcWrite(ledc_channel_r, 255 - val);    // Vermelho pulsante
-    ledcWrite(ledc_channel_g, 255 - val);    // Verde pulsante
-    ledcWrite(ledc_channel_b, 255);          // Azul apagado
+    ledcWrite(ledc_channel_r, val);    // Vermelho pulsante
+    ledcWrite(ledc_channel_g, val);    // Verde pulsante
+    ledcWrite(ledc_channel_b, 0);      // Azul apagado
   } else {
     // Idle: Rainbow suave
     led_rainbow_enabled = true;
@@ -758,21 +930,22 @@ void updateDisplay() {
       tft.drawRoundRect(10, ct_y, W - 20, 35, 5, TFT_CYAN);  // Borda ciano
       last_ct_index = ct_index;
     }
-    
+
+    // Mostra o CT selecionado (como no código original)
     tft.setTextColor(TFT_WHITE, TFT_DARKGREEN);
     tft.setTextSize(2);
     tft.setCursor(20, ct_y + 8);
     tft.print("CT: ");
     tft.setTextColor(TFT_YELLOW, TFT_DARKGREEN);
     tft.print(tones[ct_index].name);
-    
+
     // Número do CT (direita)
-    char ct_buf[12];
-    snprintf(ct_buf, sizeof(ct_buf), "%02d/33", ct_index + 1);
+    char mode_buf[12];
+    snprintf(mode_buf, sizeof(mode_buf), "%02d/33", ct_index + 1);
     tft.setTextColor(TFT_CYAN, TFT_DARKGREEN);
     tft.setTextSize(2);
     tft.setCursor(W - 70, ct_y + 8);
-    tft.print(ct_buf);
+    tft.print(mode_buf);
   
     // ========== ESTATÍSTICAS (Rodapé, 3 colunas) ==========
     int16_t footer_y = 195;  // Ajustado para compensar header maior
@@ -818,7 +991,7 @@ void updateDisplay() {
       old_uptime_str[sizeof(old_uptime_str) - 1] = '\0';
       uptime_label_drawn = true;
     }
-  
+
     // Coluna 3: CT Index (direita)
     tft.setTextColor(TFT_CYAN, TFT_BLACK);
     tft.setTextSize(1);
@@ -826,7 +999,7 @@ void updateDisplay() {
     tft.print("CT:");
     tft.setTextSize(2);
     tft.setCursor(W - 50, footer_y + 15);
-    tft.printf("%02d", ct_index + 1);
+    tft.printf("%02d/33", ct_index + 1);
   
     // Linha separadora no rodapé
     tft.drawFastHLine(5, footer_y - 2, W - 10, TFT_DARKGREY);
@@ -1033,7 +1206,7 @@ void setup() {
   // O LED RGB é controlado via PWM para permitir transições suaves de cores
   //
   // Especificações do LED RGB:
-  // - Tipo: Anodo Comum (LOW acende, HIGH apaga)
+  // - Tipo: Cátodo Comum (HIGH acende, LOW apaga)
   // - Pinos: R=GPIO4, G=GPIO16, B=GPIO17
   // - Controle: PWM via LEDC (LED Control) do ESP32
   // - Frequência: 5kHz (boa frequência para evitar flicker visível)
@@ -1045,11 +1218,11 @@ void setup() {
   ledc_channel_g = ledcAttach(PIN_LED_G, 5000, 8);  // Green
   ledc_channel_b = ledcAttach(PIN_LED_B, 5000, 8);  // Blue
 
-  // Inicializa LED apagado (anodo comum: 255 = apagado)
+  // Inicializa LED apagado (cátodo comum: 0 = apagado)
   // Isso é importante porque no boot o LED não deve estar aceso
-  ledcWrite(ledc_channel_r, 255);
-  ledcWrite(ledc_channel_g, 255);
-  ledcWrite(ledc_channel_b, 255);
+  ledcWrite(ledc_channel_r, 0);
+  ledcWrite(ledc_channel_g, 0);
+  ledcWrite(ledc_channel_b, 0);
 
   Serial.printf("LED RGB configurado (PWM) - Canais: R=%d, G=%d, B=%d\n",
                 ledc_channel_r, ledc_channel_g, ledc_channel_b);
@@ -1165,11 +1338,13 @@ void loop() {
       digitalWrite(PIN_PTT, HIGH);  // Ativa transmissão
     } else {
       // COR desativado → FIM DO QSO → HANG TIME → CT → PTT OFF
-      delay(HANG_TIME_MS);        // Aguarda hang time (600ms)
-      if (!playing) playCT();     // Reproduz courtesy tone (se não estiver tocando)
-      digitalWrite(PIN_PTT, LOW); // Desativa transmissão
+      delay(HANG_TIME_MS);  // Aguarda hang time (600ms)
+      if (!playing) {
+        playCT();  // Reproduz courtesy tone selecionado
+      }
+      digitalWrite(PIN_PTT, LOW);  // Desativa transmissão
       ptt_state = false;
-      qso_count++;               // Incrementa contador de QSOs
+      qso_count++;  // Incrementa contador de QSOs
     }
 
     // Atualiza display após mudança de estado
@@ -1186,15 +1361,9 @@ void loop() {
   // Verifica se houve toque na tela
   if (ts.touched()) {
     TS_Point p = ts.getPoint();
-    // Serial.printf("Touch raw: x=%d, y=%d, z=%d\n", p.x, p.y, p.z); // Removido para evitar flood
 
     // Filtra touch com coordenadas inválidas (valores muito altos indicam touch falso)
     if (p.z > 600 && p.x < 8000 && p.y < 8000) {
-      // #region agent log
-      logToFile("C", "TOUCH_DETECTED", millis(), p.x, p.y, p.z);
-      Serial.printf("Touch válido detectado: x=%d, y=%d, z=%d\n", p.x, p.y, p.z);
-      // #endregion
-
       // Avança para o próximo courtesy tone (circular)
       ct_index = (ct_index + 1) % N_CT;
       needsFullRedraw = true;  // Marca para redraw completo
@@ -1235,5 +1404,30 @@ void loop() {
       if (hue >= 360) hue = 0;  // Reinicia ciclo ao atingir 360°
       setColorFromHue(hue);  // Aplica nova cor ao LED
     }
+  }
+
+  // ========== IDENTIFICAÇÃO AUTOMÁTICA (ID VOZ e CW) ==========
+  // Identificação em voz a cada 10 minutos (sem QSO ativo)
+  if (millis() - last_voice >= VOICE_INTERVAL_MS && !playing && !ptt_state) {
+    last_voice = millis();
+    Serial.println("=== IDENTIFICAÇÃO EM VOZ (10 min) ===");
+    digitalWrite(PIN_PTT, HIGH);  // PTT ON
+    delay(100);
+    playVoiceFile("/id_voz_8k16.wav");  // Toca indicativo de voz
+    delay(100);
+    digitalWrite(PIN_PTT, LOW);   // PTT OFF
+    Serial.println("Identificação de voz concluída");
+  }
+
+  // Identificação em CW (Morse) a cada 30 minutos (sem QSO ativo)
+  if (millis() - last_cw >= CW_INTERVAL_MS && !playing && !ptt_state) {
+    last_cw = millis();
+    Serial.println("=== IDENTIFICAÇÃO EM CW (30 min) ===");
+    digitalWrite(PIN_PTT, HIGH);  // PTT ON
+    delay(100);
+    playCW(CALLSIGN);  // Toca callsign em Morse
+    delay(100);
+    digitalWrite(PIN_PTT, LOW);   // PTT OFF
+    Serial.println("Identificação CW concluída");
   }
 }

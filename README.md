@@ -11,6 +11,14 @@
 
 </div>
 
+<div align="center">
+
+![Display da Repetidora em Funcionamento](RPT2ESP32-com33beep/ESP_32.jpg)
+
+*Interface visual da repetidora mostrando status "EM ESCUTA", callsign "PY2KEP SP", courtesy tone "Boop" (01/33), estatísticas de QSOs, uptime e informações do CT*
+
+</div>
+
 ---
 
 ## 📖 Sobre
@@ -123,7 +131,81 @@ Instale as seguintes bibliotecas via `Sketch > Include Library > Manage Librarie
 - **TFT_eSPI** (por Bodmer)
 - **XPT2046_Touchscreen**
 
-### 4. Configurar TFT_eSPI
+### 4. Instalar Plugin de Upload de Dados (SPIFFS/LittleFS)
+Para fazer upload de arquivos de áudio (WAV), você precisa instalar o plugin:
+
+#### Instalação via Arduino IDE 2.x (Recomendado)
+1. Abra o **Arduino IDE 2.x**
+2. Vá em `Tools > Manage Plugins...`
+3. Pesquise por "ESP32 Sketch Data Upload" ou "LittleFS Upload"
+4. Clique em **Install** e aguarde a instalação
+
+#### Instalação Manual (se necessário)
+Se você baixou o arquivo `.vsix` manualmente:
+
+1. **NÃO execute o arquivo `.vsix`** (não clique duas vezes nele)
+2. Copie o arquivo para a pasta de plugins do Arduino IDE:
+   ```
+   C:\Users\[SeuUsuario]\.arduinoIDE\plugins\
+   ```
+3. **Feche completamente** o Arduino IDE 2.x
+4. **Reabra** o Arduino IDE 2.x
+
+#### Como Usar o Plugin
+Diferente da versão antiga (1.8), na versão 2.x o plugin funciona como extensão de código (estilo VS Code):
+
+1. **Feche o Monitor Serial** (obrigatório - o upload falha se estiver aberto)
+2. Pressione **Ctrl + Shift + P** (abre a Paleta de Comandos)
+3. Digite: `Upload LittleFS` ou `Upload SPIFFS`
+4. Selecione o comando na lista
+5. Aguarde o upload completar
+
+> ⚠️ **Importante**: 
+> - O arquivo `.vsix` deve estar diretamente na pasta `plugins`, não em uma subpasta
+> - Sempre feche o Monitor Serial antes de fazer upload
+> - Certifique-se de que os arquivos estão na pasta `data` dentro do projeto
+
+Este plugin permite fazer upload de arquivos da pasta `/data` para a memória SPIFFS do ESP32.
+
+### 5. Preparar Arquivos de Áudio
+Os arquivos de áudio devem ser colocados na pasta `/data` do projeto:
+
+```
+Repetidora_Radio_Amador/
+├── data/
+│   └── id_voz_8k16.wav    # Arquivo de identificação em voz (já existe!)
+└── RPT2ESP32-com33beep/
+    └── RPT2ESP32-com33beep.ino
+```
+
+**Formato esperado do arquivo WAV:**
+- **Sample Rate**: 8000 Hz (conforme nome: 8k16)
+- **Bit Depth**: 16-bit PCM
+- **Canais**: Mono (1 canal)
+- **Formato**: WAV não-comprimido (PCM)
+
+### 6. Upload dos Arquivos de Áudio para o ESP32
+1. **Feche o Monitor Serial** (obrigatório - o upload sempre falha se estiver aberto)
+2. Conecte o ESP32 via USB
+3. No Arduino IDE 2.x, abra o projeto (`RPT2ESP32-com33beep.ino`)
+4. Pressione **Ctrl + Shift + P** para abrir a Paleta de Comandos
+5. Digite: `Upload LittleFS` ou `Upload SPIFFS`
+6. Selecione o comando na lista
+7. Aguarde o upload completar (você verá "Data uploaded successfully" no console)
+8. O arquivo `id_voz_8k16.wav` será gravado na memória SPIFFS do ESP32
+
+**Nota**: Se você receber um erro "SPIFFS image not found" ou o comando não aparecer:
+- Certifique-se de que a pasta `/data` está no mesmo nível do arquivo `.ino`
+- Verifique se você instalou o plugin corretamente (veja seção 4)
+- Se instalou manualmente, verifique se o arquivo `.vsix` está diretamente em `plugins`, não em uma subpasta
+- Reinicie o Arduino IDE 2.x após instalar o plugin
+
+### 7. Upload do Código Principal
+1. Selecione a placa: `ESP32 Dev Module` ou `ESP32-2432S028`
+2. Conecte o ESP32 via USB
+3. Carregue o código (`Sketch > Upload`)
+
+### 8. Configurar TFT_eSPI
 O arquivo `User_Setup.h` da biblioteca TFT_eSPI deve ser configurado assim:
 
 ```cpp
@@ -236,6 +318,61 @@ Speaker 8Ω      ──────────────────── JS
 32. XP Error
 33. XP OK
 
+## 🎙 Sistema de Identificação Automática
+
+### Como fazer Upload dos Arquivos de Áudio
+
+📋 **Guia Completo de Upload**: [`DOCUMENTACAO_ESP32-2432S028_ADD.md`](RPT2ESP32-com33beep/DOCUMENTACAO_ESP32-2432S028_ADD.md)
+
+Este guia detalhado inclui:
+- ✅ Instalação do plugin "ESP32 Sketch Data Upload"
+- ✅ Formato correto dos arquivos WAV (8kHz, 16-bit, mono)
+- ✅ Como converter áudio se necessário (FFmpeg ou Audacity)
+- ✅ Como fazer upload dos arquivos
+- ✅ Como verificar funcionamento via Serial Monitor
+
+### Resumo das Identificações
+
+A repetidora possui sistema completo de identificação automática em três modos:
+
+| Modo | Quando | Conteúdo | Arquivo |
+|-------|---------|-----------|--------|
+| **Courtesy Tone** | Após cada QSO (COR desativado) | Gerado por código (33 tipos) |
+| **Identificação em Voz** | A cada **10 minutos** (sem QSO ativo) | `/id_voz_8k16.wav` (já incluído) |
+| **Identificação em CW** | A cada **30 minutos** (sem QSO ativo) | Callsign em Morse (13 WPM, 600 Hz) |
+
+### Como Funciona
+
+1. **QSO completo**: Courtesy tone selecionado é tocado
+2. **Identificação automática** (VOZ ou CW): Tocada nos intervalos regulares, independente do QSO
+3. **Controle de modo**: Toque longo na tela alterna entre Voz e CT
+4. **Display mostra**: "VOZ: CALLSIGN" ou "CT: Boop 01/33"
+
+### Nota Importante
+
+As identificações automáticas (VOZ e CW) funcionam **independentemente** do modo de áudio (courtesy tones). Você pode usar courtesy tones após cada QSO **E** ainda ter as identificações automáticas nos intervalos regulares.
+
+---
+
+## 🎙 Identificação Automática
+
+A repetidora possui sistema de identificação automática em dois modos:
+
+### 1. Identificação em Voz
+- **Intervalo**: A cada **10 minutos** (sem QSO ativo)
+- **Arquivo**: `/id_voz_8k16.wav` (já incluído no projeto)
+- **Conteúdo**: Repete o indicativo da repetidora (ex: "PY2KEP SP")
+- **Formato do áudio**: WAV, 8kHz, 16-bit, mono
+
+### 2. Identificação em CW (Morse)
+- **Intervalo**: A cada **30 minutos** (sem QSO ativo)
+- **Velocidade**: 13 WPM (palavras por minuto)
+- **Frequência**: 600 Hz
+- **Conteúdo**: Repete o indicativo em código Morse internacional
+
+### Nota Importante
+As identificações automáticas (VOZ e CW) funcionam **independentemente** do modo de áudio (courtesy tones). Você pode usar courtesy tones após cada QSO E ainda ter as identificações automáticas nos intervalos regulares.
+
 ---
 
 ## 📊 Estatísticas no Display
@@ -317,6 +454,17 @@ For detailed technical information, please refer to:
 
 ---
 
+## 🔗 Links Úteis sobre a Placa ESP32-2432S028R (CYD)
+
+Recursos adicionais para quem deseja conhecer mais sobre a placa Cheap Yellow Display e utilizá-la em outros projetos:
+
+- [Getting Started with ESP32 Cheap Yellow Display Board (ESP32-2432S028R)](https://randomnerdtutorials.com/cheap-yellow-display-esp32-2432s028r/) - 📖 Guia completo de introdução à placa CYD, incluindo instalação, configuração e exemplos
+- [ESP32 Cheap Yellow Display (CYD) Pinout (ESP32-2432S028R)](https://randomnerdtutorials.com/esp32-cheap-yellow-display-cyd-pinout-esp32-2432s028r/) - 📌 Referência completa da pinagem da placa com todos os GPIOs disponíveis
+
+> 💡 **Dica**: Estes tutoriais contêm informações valiosas sobre configuração de bibliotecas, pinagem detalhada, e exemplos de uso que podem ser úteis para outros projetos com esta placa.
+
+---
+
 ## 📝 Changelog
 
 ### v2.1 (Atual)
@@ -369,12 +517,12 @@ Radioamador brasileiro e desenvolvedor de projetos para a comunidade.
 📻 **Indicativo**: PU2PEG  
 💻 **GitHub**: [pantojinho](https://github.com/pantojinho)
 
-**Junior** - **PY2PER**
+**Junior** - **PY2PE**
 
 Radioamador brasileiro e co-desenvolvedor do projeto.
 
 📍 **Localização**: Brasil  
-📻 **Indicativo**: PY2PER
+📻 **Indicativo**: PY2PE
 
 ### Sobre o Projeto
 
@@ -405,14 +553,14 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICE
 - Comunidadade ESP32 e Arduino
 - Comunidadade de rádio amador
 - A todos que testaram e deram feedback
-- Especial agradecimento ao **Junior PY2PER** pelo apoio e contribuição ao projeto
+- Especial agradecimento ao **Junior PY2PE** pelo apoio e contribuição ao projeto
 
 ---
 
 <div align="center">
 
 **📡 Gabriel Ciandrini - PU2PEG**
-**📡 Junior - PY2PER**
+**📡 Junior - PY2PE**
 
 Feito com ❤️ para a comunidade de rádio amador
 
