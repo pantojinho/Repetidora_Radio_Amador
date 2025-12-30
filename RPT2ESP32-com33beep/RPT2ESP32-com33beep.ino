@@ -55,6 +55,52 @@
 // - Vermelho fixo: Indica transmissão ativa (evite falar)
 // - Amarelo pulsante: Alguém transmitindo no canal
 // - Rainbow: Canal livre, repetidora em espera
+//
+// SISTEMA DE IDENTIFICAÇÃO AUTOMÁTICA (ID VOZ/CW):
+// =================================================
+// A repetidora se identifica automaticamente em intervalos regulares:
+//
+// 1. ID em Voz:
+//    - Intervalo: 11 minutos (conforme código original)
+//    - Formato: Arquivo WAV com indicativo da repetidora
+//    - Ativado: Somente quando não há QSO ativo
+//    - Display: Mostra "TX VOZ" + "INDICATIVO VOZ" com fundo vermelho
+//
+// 2. ID em CW (Código Morse):
+//    - Intervalo: 16 minutos (conforme código original)
+//    - Velocidade: 13 WPM (palavras por minuto)
+//    - Frequência: 600 Hz
+//    - Ativado: Somente quando não há QSO ativo
+//    - Display: Mostra "TX CW" + "MORSE CODE" com fundo vermelho
+//    - Visualização: Exibe cada caractere e código Morse em tempo real
+//
+// SISTEMA DE COURTESY TONES (CT):
+// ===============================
+// A repetidora possui 33 Courtesy Tones diferentes:
+//
+// 1. Troca Automática:
+//    - A cada 5 QSOs, o CT é alterado automaticamente (código original)
+//    - Permite variação dos sons ao longo do tempo
+//    - Índice atualiza ciclicamente (1-33, volta para 1)
+//
+// 2. Seleção Manual:
+//    - Toque na tela do display avança para o próximo CT
+//    - Instantâneo - o novo CT é aplicado imediatamente
+//    - Display mostra o nome do CT e número (ex: "Beep 02/33")
+//
+// 3. Reprodução:
+//    - Tocado após cada QSO (após hang time de 600ms)
+//    - Volume configurável (default: 70%)
+//    - Sample rate: 22050 Hz para melhor qualidade
+//
+// CONFIGURAÇÃO DE TEMPOS (conforme código original):
+// ==============================================
+// - Hang Time: 600ms (após QSO antes do CT)
+// - ID Voz: 11 minutos
+// - ID CW: 16 minutos
+// - Troca CT: a cada 5 QSOs
+//
+// ESTES TEMPOS FORAM MANTIDOS CONFORME O CÓDIGO ORIGINAL PARA COMPATIBILIDADE.
 // ==================================================================
 
 // #region agent log - Debug logging helper
@@ -136,8 +182,10 @@ float VOLUME = 0.70f;
 #define CW_FREQ 600      // Frequência em Hz para tom CW
 
 // Intervalos de Identificação Automática (ID Voice/CW)
-const uint32_t VOICE_INTERVAL_MS = 11UL*60UL*1000UL;  // 11 minutos - ID em voz
-const uint32_t CW_INTERVAL_MS   = 16UL*60UL*1000UL;  // 16 minutos - ID em CW
+const uint32_t VOICE_INTERVAL_MS = 11UL*60UL*1000UL;  // 11 minutos - ID em voz (conforme código original)
+const uint32_t CW_INTERVAL_MS   = 16UL*60UL*1000UL;  // 16 minutos - ID em CW/Morse (conforme código original)
+const uint8_t  QSO_CT_CHANGE   = 5;                 // Troca CT a cada 5 QSOs (conforme código original) (Morse)
+const uint8_t  QSO_CT_CHANGE   = 5;                 // Troca CT a cada 5 QSOs (código original)
 
 // ====================== GLOBAIS ======================
 bool cor_stable = false;
@@ -1394,6 +1442,13 @@ void loop() {
       digitalWrite(PIN_PTT, LOW);  // Desativa transmissão
       ptt_state = false;
       qso_count++;  // Incrementa contador de QSOs
+
+      // Troca automática do CT a cada 5 QSOs (código original)
+      if (qso_count % QSO_CT_CHANGE == 0) {
+        ct_index = (ct_index + 1) % N_CT;
+        Serial.printf("*** Novo Courtesy Tone: %s (CT %02d/33) ***\n", tones[ct_index].name, ct_index + 1);
+        needsFullRedraw = true;  // Marca para atualizar display com novo CT
+      }
     }
 
     // Atualiza display após mudança de estado

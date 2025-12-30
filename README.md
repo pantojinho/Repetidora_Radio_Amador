@@ -6,6 +6,7 @@
 ![Arduino](https://img.shields.io/badge/Arduino-IDE-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/Status-Stable-brightgreen)
+[![zread](https://img.shields.io/badge/Ask_Zread-_.svg?style=for-the-badge&color=00b0aa&labelColor=000000&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTQuOTYxNTYgMS42MDAxSDIuMjQxNTZDMS44ODgxIDEuNjAwMSAxLjYwMTU2IDEuODg2NjQgMS42MDE1NiAyLjI0MDFWNC45NjAxQzEuNjAxNTYgNS4zMTM1NiAxLjg4ODEgNS42MDAxIDIuMjQxNTYgNS42MDAxSDQuOTYxNTZDNS4zMTUwMiA1LjYwMDEgNS42MDE1NiA1LjMxMzU2IDUuNjAxNTYgNC45NjAxVjIuMjQwMUM1LjYwMTU2IDEuODg2NjQgNS4zMTUwMiAxLjYwMDEgNC45NjE1NiAxLjYwMDFaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00Ljk2MTU2IDEwLjM5OTlIMi4yNDE1NkMxLjg4ODEgMTAuMzk5OSAxLjYwMTU2IDEwLjY4NjQgMS42MDE1NiAxMS4wMzk5VjEzLjc1OTlDMS42MDE1NiAxNC4xMTM0IDEuODg4MSAxNC4zOTk5IDIuMjQxNTYgMTQuMzk5OUg0Ljk2MTU2QzUuMzE1MDIgMTQuMzk5OSA1LjYwMTU2IDE0LjExMzQgNS42MDE1NiAxMy43NTk5VjExLjAzOTlDNS42MDE1NiAxMC42ODY0IDUuMzE1MDIgMTAuMzk5OSA0Ljk2MTU2IDEwLjM5OTlaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik0xMy43NTg0IDEuNjAwMUgxMS4wMzg0QzEwLjY4NSAxLjYwMDEgMTAuMzk4NCAxLjg4NjY0IDEwLjM5ODQgMi4yNDAxVjQuOTYwMUMxMC4zOTg0IDUuMzEzNTYgMTAuNjg1IDUuNjAwMSAxMS4wMzg0IDUuNjAwMUgxMy43NTg0QzE0LjExMTkgNS42MDAxIDE0LjM5ODQgNS4zMTM1NiAxNC4zOTg0IDQuOTYwMVYyLjI0MDFDMTQuMzk4NCAxLjg4NjY0IDE0LjExMTkgMS42MDAxIDEzLjc1ODQgMS42MDAxWiIgZmlsbD0iI2ZmZiIvPgo8cGF0aCBkPSJNNCAxMkwxMiA0TDQgMTJaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00IDEyTDEyIDQiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K&logoColor=ffffff)](https://zread.ai/pantojinho/Repetidora_Radio_Amador)
 
 **Sistema completo de repetidora de rádio amador com interface gráfica**
 
@@ -338,8 +339,15 @@ A repetidora possui sistema completo de identificação automática em três mod
 | Modo | Quando | Conteúdo | Arquivo |
 |-------|---------|-----------|--------|
 | **Courtesy Tone** | Após cada QSO (COR desativado) | Gerado por código (33 tipos) |
-| **Identificação em Voz** | A cada **10 minutos** (sem QSO ativo) | `/id_voz_8k16.wav` (já incluído) |
-| **Identificação em CW** | A cada **30 minutos** (sem QSO ativo) | Callsign em Morse (13 WPM, 600 Hz) |
+| **Identificação em Voz** | A cada **11 minutos** (sem QSO ativo) | `/id_voz_8k16.wav` (já incluído) |
+| **Identificação em CW** | A cada **16 minutos** (sem QSO ativo) | Callsign em Morse (13 WPM, 600 Hz) |
+
+### Troca Automática de Courtesy Tone
+
+- O **courtesy tone é alterado automaticamente a cada 5 QSOs** (conforme código original)
+- Permite variação dos sons ao longo do tempo
+- O índice atualiza ciclicamente de 1 a 33
+- Também é possível trocar manualmente via toque na tela
 
 ### Como Funciona
 
@@ -359,16 +367,18 @@ As identificações automáticas (VOZ e CW) funcionam **independentemente** do m
 A repetidora possui sistema de identificação automática em dois modos:
 
 ### 1. Identificação em Voz
-- **Intervalo**: A cada **10 minutos** (sem QSO ativo)
+- **Intervalo**: A cada **11 minutos** (sem QSO ativo) - conforme código original
 - **Arquivo**: `/id_voz_8k16.wav` (já incluído no projeto)
 - **Conteúdo**: Repete o indicativo da repetidora (ex: "PY2KEP SP")
 - **Formato do áudio**: WAV, 8kHz, 16-bit, mono
+- **Display**: Mostra "TX VOZ" com fundo vermelho durante transmissão
 
 ### 2. Identificação em CW (Morse)
-- **Intervalo**: A cada **30 minutos** (sem QSO ativo)
+- **Intervalo**: A cada **16 minutos** (sem QSO ativo) - conforme código original
 - **Velocidade**: 13 WPM (palavras por minuto)
 - **Frequência**: 600 Hz
 - **Conteúdo**: Repete o indicativo em código Morse internacional
+- **Display**: Mostra "TX CW" com fundo vermelho e exibe código Morse em tempo real
 
 ### Nota Importante
 As identificações automáticas (VOZ e CW) funcionam **independentemente** do modo de áudio (courtesy tones). Você pode usar courtesy tones após cada QSO E ainda ter as identificações automáticas nos intervalos regulares.
@@ -403,6 +413,15 @@ float VOLUME = 0.70f;  // 0.0 a 1.0
 ```cpp
 #define HANG_TIME_MS 600  // Tempo em milissegundos após COR desativar
 ```
+
+### Ajustar Intervalos de Identificação
+```cpp
+const uint32_t VOICE_INTERVAL_MS = 11UL*60UL*1000UL;  // 11 minutos - ID em voz
+const uint32_t CW_INTERVAL_MS   = 16UL*60UL*1000UL;  // 16 minutos - ID em CW
+const uint8_t  QSO_CT_CHANGE   = 5;                 // Troca CT a cada 5 QSOs
+```
+
+**Nota**: Todos os tempos foram configurados conforme o código original para garantir compatibilidade.
 
 ### Ajustar Frequência SPI
 No `User_Setup.h`:

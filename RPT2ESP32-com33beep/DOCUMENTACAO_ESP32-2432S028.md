@@ -286,22 +286,27 @@ A repetidora possui sistema completo de identificação automática em três mod
 - **Modo**: 33 courtesy tones diferentes (selecionáveis via touchscreen)
 - **Controle**: Toque curto na tela (< 1.5 segundos) muda CT
 - **Funcionamento**: Toca courtesy tone selecionado durante hang time (600ms)
+- **Troca Automática**: O CT é alterado automaticamente a cada **5 QSOs** (conforme código original)
+- **Índice**: Atualiza ciclicamente de 1 a 33 (volta para 1 após o 33)
 
 ### 2. Identificação em Voz
-- **Intervalo**: A cada **10 minutos** (se nenhum QSO ativo)
+- **Intervalo**: A cada **11 minutos** (se nenhum QSO ativo) - conforme código original
 - **Arquivo**: `/id_voz_8k16.wav` na memória SPIFFS
 - **Conteúdo**: Repete o indicativo da repetidora (ex: "PY2KEP SP")
 - **Formato do áudio**: WAV, 8kHz, 16-bit, mono
 - **Função**: `playVoiceFile()` lê arquivo do SPIFFS e reproduz via I2S
 - **Comportamento**: PTT ON -> Toca voz -> PTT OFF (automático, independente do modo de áudio)
+- **Display**: Mostra "TX VOZ" + "INDICATIVO VOZ" com fundo vermelho durante transmissão
 
 ### 3. Identificação em CW (Morse)
-- **Intervalo**: A cada **30 minutos** (se nenhum QSO ativo)
+- **Intervalo**: A cada **16 minutos** (se nenhum QSO ativo) - conforme código original
 - **Velocidade**: 13 WPM (Words Per Minute)
 - **Frequência**: 600 Hz para tom CW
 - **Conteúdo**: Repete o indicativo em código Morse internacional
 - **Função**: `playCW()` converte texto para Morse e reproduz via I2S
 - **Comportamento**: PTT ON -> Toca Morse -> PTT OFF (automático)
+- **Display**: Mostra "TX CW" + "MORSE CODE" com fundo vermelho durante transmissão
+- **Visualização em Tempo Real**: Exibe cada caractere e código Morse sendo transmitido (ex: "P: .--.")
 
 ### Controle do Modo de Áudio
 
@@ -312,6 +317,17 @@ A repetidora possui sistema completo de identificação automática em três mod
 ### Nota Importante
 
 As identificações automáticas (VOZ e CW) funcionam **independentemente** do modo de áudio (courtesy tones). Você pode usar courtesy tones após cada QSO E ainda ter as identificações automáticas nos intervalos regulares.
+
+### Configurações de Tempos (conforme código original)
+
+| Função | Tempo | Descrição |
+|---------|-------|-----------|
+| Hang Time | 600ms | Espera após QSO antes do courtesy tone |
+| ID em Voz | 11 minutos | Intervalo de identificação em voz |
+| ID em CW (Morse) | 16 minutos | Intervalo de identificação em Morse |
+| Troca de CT | A cada 5 QSOs | Muda automaticamente o courtesy tone |
+
+**Nota**: Todos os tempos foram mantidos conforme o código original para garantir compatibilidade.
 
 ---
 
