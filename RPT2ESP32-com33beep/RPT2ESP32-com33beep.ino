@@ -854,16 +854,17 @@ void initWebServer() {
 
   // Rota para salvar configurações e reiniciar
   server.on("/save", HTTP_POST, []() {
-    Serial.println("=== REQUISIÇÃO /save RECEBIDA ===");
-    Serial.printf("Args recebidos: %d\n", server.args());
+    Serial.println("\n[WEB] =========================================");
+    Serial.println("[WEB] === REQUISIÇÃO /save RECEBIDA ===");
+    Serial.printf("[WEB] Args recebidos: %d\n", server.args());
 
     // Processa cada campo do formulário
     if (server.hasArg("callsign")) {
       String value = server.arg("callsign");
       value.toCharArray(config_callsign, sizeof(config_callsign));
-      Serial.printf("Callsign: %s\n", config_callsign);
+      Serial.printf("[CONFIG] Callsign: %s\n", config_callsign);
     } else {
-      Serial.println("AVISO: Campo 'callsign' não recebido!");
+      Serial.println("[CONFIG] AVISO: Campo 'callsign' não recebido!");
     }
 
     if (server.hasArg("frequency")) {
@@ -912,16 +913,16 @@ void initWebServer() {
 
     if (server.hasArg("voice_interval")) {
       config_voice_interval = server.arg("voice_interval").toInt() * 60000; // converte minutos para ms
-      Serial.printf("Voice Interval: %lu ms\n", config_voice_interval);
+      Serial.printf("[CONFIG] Voice Interval: %lu ms (%d minutos)\n", config_voice_interval, config_voice_interval / 60000);
     } else {
-      Serial.println("AVISO: Campo 'voice_interval' não recebido!");
+      Serial.println("[CONFIG] AVISO: Campo 'voice_interval' não recebido!");
     }
 
     if (server.hasArg("cw_interval")) {
       config_cw_interval = server.arg("cw_interval").toInt() * 60000; // converte minutos para ms
-      Serial.printf("CW Interval: %lu ms\n", config_cw_interval);
+      Serial.printf("[CONFIG] CW Interval: %lu ms (%d minutos)\n", config_cw_interval, config_cw_interval / 60000);
     } else {
-      Serial.println("AVISO: Campo 'cw_interval' não recebido!");
+      Serial.println("[CONFIG] AVISO: Campo 'cw_interval' não recebido!");
     }
 
     if (server.hasArg("ct_change")) {
@@ -961,7 +962,9 @@ void initWebServer() {
       Serial.println("AVISO: Campo 'debug_level' não recebido!");
     }
 
-    Serial.println("=== SALVANDO PREFERENCES ===");
+    Serial.println("[CONFIG] === SALVANDO PREFERENCES ===");
+    Serial.printf("[CONFIG] Voice Interval: %d min, CW Interval: %d min\n", 
+                  config_voice_interval / 60000, config_cw_interval / 60000);
     // Salva as configurações no Preferences
     savePreferences();
 
@@ -975,11 +978,12 @@ void initWebServer() {
     first_draw = true;  // Força redraw completo
     updateDisplay();  // Atualiza display imediatamente
 
-    Serial.println("=== ENVIANDO RESPOSTA HTML ===");
+    Serial.println("[WEB] === ENVIANDO RESPOSTA HTML ===");
+    Serial.println("[WEB] =========================================\n");
     // Responde com página de sucesso e reinicia
     server.send(200, "text/html", getSuccessPage("Configurações salvas! Reiniciando o dispositivo..."));
     delay(2000);  // Aumentado para 2 segundos para dar tempo de ver a atualização
-    Serial.println("=== REINICIANDO ESP32 ===");
+    Serial.println("[SYSTEM] === REINICIANDO ESP32 ===");
     ESP.restart();
   });
 
@@ -1957,8 +1961,8 @@ void updateDisplay() {
                     clear_x, status_text_y, status_text_w);
     }
     
-    // Subtexto (para modo CW/Voz ou QSO)
-    if (status_subtext[0] != '\0') {
+    // Subtexto (para modo CW/Voz ou QSO) - NÃO desenha se está em modo WiFi
+    if (status_subtext[0] != '\0' && !show_ip_screen) {
       tft.setTextSize(2);
       tft.setTextColor(status_text_color, status_bg);
       int16_t subtext_w = tft.textWidth(status_subtext);
@@ -1983,8 +1987,8 @@ void updateDisplay() {
         // Se está em modo CW mas não tem código Morse para mostrar, limpa área
         tft.fillRect(10, status_y + 35, W - 20, 20, status_bg);
       }
-    } else if (ptt_state && tx_mode == TX_NONE) {
-      // Modo RX normal - mostra QSO ATUAL
+    } else if (ptt_state && tx_mode == TX_NONE && !show_ip_screen) {
+      // Modo RX normal - mostra QSO ATUAL (não desenha se está em modo WiFi)
       tft.setTextSize(2);
       tft.setTextColor(TFT_WHITE, status_bg);
       int16_t qso_w = tft.textWidth("QSO ATUAL");
@@ -1994,7 +1998,7 @@ void updateDisplay() {
 
       tft.setCursor((W - qso_w) / 2, status_y + 60);
       tft.print("QSO ATUAL");
-    } else {
+    } else if (!show_ip_screen) {
       // Limpa área de subtexto e código Morse se não está em TX (evita texto fantasma)
       // IMPORTANTE: NÃO limpar área do texto principal!
       // status_text_y está aproximadamente em y=100 (status_y + 33 + 2)
@@ -2523,14 +2527,14 @@ void loop() {
   bool boot_pressed = (digitalRead(PIN_BOOT) == LOW);
   static bool reset_warning_shown = false;
   static unsigned long last_boot_toggle = 0;
-  const unsigned long BOOT_DEBOUNCE_MS = 300;  // Debounce de 300ms
+  const unsigned long BOOT_DEBOUNCE_MS = 150;  // Debounce reduzido para 150ms (mais responsivo)
 
   if (boot_pressed && !boot_button_pressed) {
     // Botão acaba de ser pressionado
     boot_button_pressed = true;
     boot_button_start = millis();
     reset_warning_shown = false;
-    Serial.println("BOOT button pressionado");
+    if (DEBUG_EVENTS) Serial.println("[BOOT] Botão pressionado");
   }
 
   // Se o botão está pressionado, verifica o tempo
@@ -2551,7 +2555,7 @@ void loop() {
         tft.setCursor(30, 160);
         tft.println("RESET DE FABRICA");
         reset_warning_shown = true;
-        Serial.println("=== AVISO: RESET DE FÁBRICA (aguardando soltar botão) ===");
+        Serial.println("[BOOT] === AVISO: RESET DE FÁBRICA (aguardando soltar botão) ===");
       }
     }
   }
@@ -2564,11 +2568,11 @@ void loop() {
 
     // Verifica se foi pressionado por mais de 5 segundos = RESET DE FÁBRICA
     if (press_duration >= RESET_FACTORY_MS) {
-      Serial.println("=== RESET DE FÁBRICA SOLICITADO ===");
+      Serial.println("[BOOT] === RESET DE FÁBRICA SOLICITADO ===");
       preferences.begin("config", false);
       preferences.clear(); // Apaga todas as configurações
       preferences.end();
-      Serial.println("Configurações apagadas - Reiniciando...");
+      Serial.println("[BOOT] Configurações apagadas - Reiniciando...");
 
       // Mostra alerta visual
       tft.fillScreen(TFT_RED);
@@ -2583,7 +2587,7 @@ void loop() {
 
       delay(1500);
       ESP.restart();
-    } else {
+    } else if (press_duration > 50) {  // Ignora toques muito rápidos (< 50ms)
       // Debounce: evita múltiplas detecções muito rápidas
       unsigned long now = millis();
       if (now - last_boot_toggle >= BOOT_DEBOUNCE_MS) {
@@ -2594,10 +2598,13 @@ void loop() {
         last_boot_toggle = now;
 
         if (show_ip_screen) {
-          Serial.println("BOOT button - Mostrando TELA DO WIFI");
+          Serial.println("[BOOT] Toggle -> Mostrando TELA DO WIFI");
         } else {
-          Serial.println("BOOT button - Voltando para TELA NORMAL");
+          Serial.println("[BOOT] Toggle -> Voltando para TELA NORMAL");
         }
+        
+        // Atualiza display imediatamente
+        updateDisplay();
       }
     }
   }
