@@ -228,8 +228,8 @@ WebServer server(80);
 // Estados do BOOT Button
 bool boot_button_pressed = false;
 unsigned long boot_button_start = 0;
+bool show_ip_screen = false;  // Flag para alternar entre tela normal e tela de IP/WiFi
 #define RESET_FACTORY_MS 5000  // 5 segundos para reset de fábrica
-bool configMode = false;  // Mantido para compatibilidade com código existente
 
 // ====================== VARIÁVEIS DE CONFIGURAÇÃO ======================
 // Estas variáveis podem ser configuradas via interface web
@@ -285,7 +285,6 @@ unsigned long last_change = 0;  // Para debounce do COR
 const uint32_t COR_DEBOUNCE_MS = 350;  // Tempo de debounce (350ms)
 bool ptt_locked = false;  // Flag para bloquear PTT após timeout
 unsigned long ptt_activated_at = 0;  // Timestamp quando PTT foi ativado (para timeout)
-bool show_ip_screen = false;  // Flag para mostrar IP (quando BOOT pressionado)
 
 uint16_t qso_count = 0;
 uint8_t  ct_index  = 0;
@@ -756,13 +755,26 @@ String generateConfigPage() {
   // Script JavaScript
   html += "<script>";
   html += "function saveConfig() {";
-  html += "  var data = new FormData(document);";
-  html += "  data.append('action', 'save');";
   html += "  if(confirm('Deseja salvar as configurações e reiniciar o dispositivo?')) {";
+  html += "    var data = new FormData();";
+  html += "    data.append('callsign', document.getElementById('callsign').value);";
+  html += "    data.append('frequency', document.getElementById('frequency').value);";
+  html += "    data.append('cw_message', document.getElementById('cw_message').value);";
+  html += "    data.append('cw_wpm', document.getElementById('cw_wpm').value);";
+  html += "    data.append('cw_freq', document.getElementById('cw_freq').value);";
+  html += "    data.append('hang_time', document.getElementById('hang_time').value);";
+  html += "    data.append('ptt_timeout', document.getElementById('ptt_timeout').value);";
+  html += "    data.append('voice_interval', document.getElementById('voice_interval').value);";
+  html += "    data.append('cw_interval', document.getElementById('cw_interval').value);";
+  html += "    data.append('ct_change', document.getElementById('ct_change').value);";
+  html += "    data.append('ct_index', document.getElementById('ct_index').value);";
+  html += "    data.append('volume', document.getElementById('volume').value);";
+  html += "    data.append('sample_rate', document.getElementById('sample_rate').value);";
+  html += "    data.append('debug_level', document.getElementById('debug_level').value);";
   html += "    fetch('/save', { method: 'POST', body: data })";
   html += "      .then(response => response.text())";
-  html += "      .then(data => { alert(data); setTimeout(() => location.reload(), 3000); })";
-  html += "      .catch(error => alert('Erro ao salvar: ' + error));";
+  html += "      .then(data => { alert('Configurações salvas! O dispositivo será reiniciado...'); window.location.href = '/'; })";
+  html += "      .catch(error => { alert('Erro ao salvar: ' + error); console.error('Erro:', error); });";
   html += "  }";
   html += "}";
   html += "function restartDevice() {";
@@ -842,94 +854,132 @@ void initWebServer() {
 
   // Rota para salvar configurações e reiniciar
   server.on("/save", HTTP_POST, []() {
-    Serial.println("Recebida requisição de salvar configurações...");
+    Serial.println("=== REQUISIÇÃO /save RECEBIDA ===");
+    Serial.printf("Args recebidos: %d\n", server.args());
 
     // Processa cada campo do formulário
     if (server.hasArg("callsign")) {
       String value = server.arg("callsign");
       value.toCharArray(config_callsign, sizeof(config_callsign));
       Serial.printf("Callsign: %s\n", config_callsign);
+    } else {
+      Serial.println("AVISO: Campo 'callsign' não recebido!");
     }
 
     if (server.hasArg("frequency")) {
       String value = server.arg("frequency");
       value.toCharArray(config_frequency, sizeof(config_frequency));
       Serial.printf("Frequência: %s\n", config_frequency);
+    } else {
+      Serial.println("AVISO: Campo 'frequency' não recebido!");
     }
 
     if (server.hasArg("cw_message")) {
       String value = server.arg("cw_message");
       value.toCharArray(config_cw_message, sizeof(config_cw_message));
       Serial.printf("Mensagem CW: %s\n", config_cw_message);
+    } else {
+      Serial.println("AVISO: Campo 'cw_message' não recebido!");
     }
 
     if (server.hasArg("cw_wpm")) {
       config_cw_wpm = server.arg("cw_wpm").toInt();
       Serial.printf("CW WPM: %u\n", config_cw_wpm);
+    } else {
+      Serial.println("AVISO: Campo 'cw_wpm' não recebido!");
     }
 
     if (server.hasArg("cw_freq")) {
       config_cw_freq = server.arg("cw_freq").toInt();
       Serial.printf("CW Freq: %u Hz\n", config_cw_freq);
+    } else {
+      Serial.println("AVISO: Campo 'cw_freq' não recebido!");
     }
 
     if (server.hasArg("hang_time")) {
       config_hang_time = server.arg("hang_time").toInt();
       Serial.printf("Hang Time: %lu ms\n", config_hang_time);
+    } else {
+      Serial.println("AVISO: Campo 'hang_time' não recebido!");
     }
 
     if (server.hasArg("ptt_timeout")) {
       config_ptt_timeout = server.arg("ptt_timeout").toInt();
       Serial.printf("PTT Timeout: %lu ms\n", config_ptt_timeout);
+    } else {
+      Serial.println("AVISO: Campo 'ptt_timeout' não recebido!");
     }
 
     if (server.hasArg("voice_interval")) {
       config_voice_interval = server.arg("voice_interval").toInt() * 60000; // converte minutos para ms
       Serial.printf("Voice Interval: %lu ms\n", config_voice_interval);
+    } else {
+      Serial.println("AVISO: Campo 'voice_interval' não recebido!");
     }
 
     if (server.hasArg("cw_interval")) {
       config_cw_interval = server.arg("cw_interval").toInt() * 60000; // converte minutos para ms
       Serial.printf("CW Interval: %lu ms\n", config_cw_interval);
+    } else {
+      Serial.println("AVISO: Campo 'cw_interval' não recebido!");
     }
 
     if (server.hasArg("ct_change")) {
       config_ct_change = server.arg("ct_change").toInt();
       Serial.printf("CT Change: %lu QSOs\n", config_ct_change);
+    } else {
+      Serial.println("AVISO: Campo 'ct_change' não recebido!");
     }
 
     if (server.hasArg("ct_index")) {
       config_ct_index = server.arg("ct_index").toInt();
       ct_index = config_ct_index;
       Serial.printf("CT Index: %d\n", config_ct_index);
+    } else {
+      Serial.println("AVISO: Campo 'ct_index' não recebido!");
     }
 
     if (server.hasArg("volume")) {
       config_volume = server.arg("volume").toFloat() / 100.0f; // converte para 0-1
       Serial.printf("Volume: %.2f\n", config_volume);
+    } else {
+      Serial.println("AVISO: Campo 'volume' não recebido!");
     }
 
     if (server.hasArg("sample_rate")) {
       config_sample_rate = server.arg("sample_rate").toInt();
       Serial.printf("Sample Rate: %u Hz\n", config_sample_rate);
+    } else {
+      Serial.println("AVISO: Campo 'sample_rate' não recebido!");
     }
 
     if (server.hasArg("debug_level")) {
       config_debug_level = server.arg("debug_level").toInt();
       DEBUG_LEVEL = config_debug_level;
       Serial.printf("Debug Level: %d\n", config_debug_level);
+    } else {
+      Serial.println("AVISO: Campo 'debug_level' não recebido!");
     }
 
+    Serial.println("=== SALVANDO PREFERENCES ===");
     // Salva as configurações no Preferences
     savePreferences();
 
     // Atualiza as variáveis globais
-    CALLSIGN = config_callsign;
+    // CALLSIGN já aponta para config_callsign, então não precisa reatribuir
+    // Mas precisamos forçar redraw do display antes de reiniciar
     VOLUME = config_volume;
+    
+    // Força atualização do display com novas configurações antes de reiniciar
+    needsFullRedraw = true;
+    first_draw = true;  // Força redraw completo
+    updateDisplay();  // Atualiza display imediatamente
 
+    Serial.println("=== ENVIANDO RESPOSTA HTML ===");
     // Responde com página de sucesso e reinicia
     server.send(200, "text/html", getSuccessPage("Configurações salvas! Reiniciando o dispositivo..."));
-    delay(2000);
+    delay(2000);  // Aumentado para 2 segundos para dar tempo de ver a atualização
+    Serial.println("=== REINICIANDO ESP32 ===");
     ESP.restart();
   });
 
@@ -975,13 +1025,28 @@ void initWebServer() {
 
 /**
  * @brief Inicia WiFi AP no boot (sempre ativo)
+ *
+ * Credenciais do WiFi (Anotar para configuração):
+ * SSID: REPETIDORA_SETUP
+ * Senha: repetidora123
+ * IP: 192.168.4.1 (padrão do ESP32 em modo AP)
+ *
+ * Como configurar:
+ * 1. Conecte no WiFi "REPETIDORA_SETUP" com senha "repetidora123"
+ * 2. Abra o navegador e acesse: http://192.168.4.1
+ * 3. Altere as configurações desejadas
+ * 4. Clique em "Salvar e Reiniciar"
+ * 5. O ESP32 reiniciará com as novas configurações
  */
 void initWiFiAP() {
   Serial.println("Iniciando WiFi AP...");
   WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_SSID, AP_PASSWORD);
-  Serial.printf("AP: %s\n", AP_SSID);
+  Serial.printf("=== CREDENCIAIS DO WIFI ===\n");
+  Serial.printf("SSID: %s\n", AP_SSID);
+  Serial.printf("Senha: %s\n", AP_PASSWORD);
   Serial.printf("IP: %s\n", WiFi.softAPIP().toString().c_str());
+  Serial.println("========================");
 }
 
 // ====================== AUDIO ========================
@@ -1733,10 +1798,12 @@ void updateDisplay() {
     // ========== HEADER - Redesenha apenas quando mudou ==========
     int16_t header_height = 60;
     static bool header_drawn = false;
+    static bool last_show_ip_screen = false;
 
-    // Só redesenha header se: primeira vez OU redraw completo forçado
+    // Redesenha header se: primeira vez OU redraw completo forçado OU show_ip_screen mudou
     // O callsign NÃO muda durante operação normal, então não precisa redesenhar sempre
-    if (!header_drawn || isFullRedraw) {
+    bool show_ip_changed = (show_ip_screen != last_show_ip_screen);
+    if (!header_drawn || isFullRedraw || show_ip_changed) {
       tft.fillRect(0, 0, W, header_height, TFT_DARKBLUE);  // Limpa header
       tft.drawRoundRect(0, 0, W, header_height, 5, TFT_WHITE);  // Borda branca
 
@@ -1764,6 +1831,7 @@ void updateDisplay() {
       // Linha separadora
       tft.drawFastHLine(5, header_height, W - 10, TFT_DARKGREY);
       header_drawn = true;
+      last_show_ip_screen = show_ip_screen;  // Atualiza estado anterior
     }
     
     // ========== STATUS PRINCIPAL (Centro, caixa grande) ==========
@@ -1773,17 +1841,11 @@ void updateDisplay() {
     
     // Determina estado e texto baseado no modo de transmissão
     if (show_ip_screen) {
-      // MOSTRAR IP (BOOT button pressionado)
+      // MOSTRAR IP E CREDENCIAIS (BOOT button pressionado)
       status_bg = TFT_CYAN;
       status_text_color = TFT_BLACK;
       status_text = "WIFI AP ATIVO";
-      status_subtext = WiFi.softAPIP().toString().c_str();
-    } else if (configMode) {
-      // MODO DE CONFIGURAÇÃO - Mostra status WiFi
-      status_bg = TFT_CYAN;
-      status_text_color = TFT_BLACK;
-      status_text = "MODO CONFIG";
-      status_subtext = WiFi.softAPIP().toString().c_str();
+      status_subtext = "";  // Será desenhado separadamente abaixo
     } else if (tx_mode == TX_VOICE) {
       status_bg = TFT_RED;
       status_text_color = TFT_WHITE;
@@ -1861,6 +1923,33 @@ void updateDisplay() {
     // Desenha o texto principal
     tft.setCursor(clear_x, status_text_y);
     tft.print(status_text);
+    
+    // Se está em modo WiFi, desenha informações do WiFi abaixo do texto principal
+    if (show_ip_screen) {
+      tft.setTextSize(1);
+      tft.setTextColor(TFT_BLACK, status_bg);
+      
+      // SSID
+      char ssid_line[64];
+      snprintf(ssid_line, sizeof(ssid_line), "SSID: %s", AP_SSID);
+      int16_t ssid_w = tft.textWidth(ssid_line);
+      tft.setCursor((W - ssid_w) / 2, status_y + 35);
+      tft.print(ssid_line);
+      
+      // Senha
+      char pwd_line[64];
+      snprintf(pwd_line, sizeof(pwd_line), "Senha: %s", AP_PASSWORD);
+      int16_t pwd_w = tft.textWidth(pwd_line);
+      tft.setCursor((W - pwd_w) / 2, status_y + 50);
+      tft.print(pwd_line);
+      
+      // IP
+      char ip_line[64];
+      snprintf(ip_line, sizeof(ip_line), "IP: %s", WiFi.softAPIP().toString().c_str());
+      int16_t ip_w = tft.textWidth(ip_line);
+      tft.setCursor((W - ip_w) / 2, status_y + 65);
+      tft.print(ip_line);
+    }
     
     // Debug adicional para modo "EM ESCUTA" (apenas em modo verbose)
     if (DEBUG_JSON && status_bg == TFT_GREEN) {
@@ -2251,6 +2340,11 @@ void setup() {
 
   // Carrega configurações salvas do Preferences
   loadPreferences();
+  
+  // Após carregar configurações, força redraw do display com os valores corretos
+  needsFullRedraw = true;
+  first_draw = true;
+  updateDisplay();
 
   // Inicia WiFi AP (sempre ativo para configuração)
   initWiFiAP();
@@ -2427,56 +2521,85 @@ void loop() {
   // ========== CONTROLE DE BOOT BUTTON (GPIO 0) ==========
   // Lê o estado do BOOT button (LOW = pressionado)
   bool boot_pressed = (digitalRead(PIN_BOOT) == LOW);
+  static bool reset_warning_shown = false;
+  static unsigned long last_boot_toggle = 0;
+  const unsigned long BOOT_DEBOUNCE_MS = 300;  // Debounce de 300ms
 
   if (boot_pressed && !boot_button_pressed) {
     // Botão acaba de ser pressionado
     boot_button_pressed = true;
     boot_button_start = millis();
-    show_ip_screen = true;
-    needsFullRedraw = true;
-    Serial.println("BOOT button pressionado - Mostrando IP na tela");
-  } else if (!boot_pressed && boot_button_pressed) {
-    // Botão foi solto
+    reset_warning_shown = false;
+    Serial.println("BOOT button pressionado");
+  }
+
+  // Se o botão está pressionado, verifica o tempo
+  if (boot_pressed && boot_button_pressed) {
+    unsigned long press_duration = millis() - boot_button_start;
+    
+    // Se foi pressionado por mais de 5 segundos = RESET DE FÁBRICA
+    if (press_duration >= RESET_FACTORY_MS) {
+      // Mostra alerta de reset na tela (apenas uma vez)
+      if (!reset_warning_shown) {
+        tft.fillScreen(TFT_RED);
+        tft.setTextColor(TFT_WHITE, TFT_RED);
+        tft.setTextSize(2);
+        tft.setCursor(50, 100);
+        tft.println("ATENCAO!");
+        tft.setCursor(30, 130);
+        tft.println("SOLTAR PARA");
+        tft.setCursor(30, 160);
+        tft.println("RESET DE FABRICA");
+        reset_warning_shown = true;
+        Serial.println("=== AVISO: RESET DE FÁBRICA (aguardando soltar botão) ===");
+      }
+    }
+  }
+
+  // Quando o botão é solto
+  if (!boot_pressed && boot_button_pressed) {
+    unsigned long press_duration = millis() - boot_button_start;
     boot_button_pressed = false;
+    reset_warning_shown = false;
 
     // Verifica se foi pressionado por mais de 5 segundos = RESET DE FÁBRICA
-    if (millis() - boot_button_start >= RESET_FACTORY_MS) {
+    if (press_duration >= RESET_FACTORY_MS) {
       Serial.println("=== RESET DE FÁBRICA SOLICITADO ===");
       preferences.begin("config", false);
       preferences.clear(); // Apaga todas as configurações
       preferences.end();
       Serial.println("Configurações apagadas - Reiniciando...");
-      delay(1000);
-      ESP.restart();
-    } else {
-      // Foi um toque normal - volta para tela normal
-      show_ip_screen = false;
-      needsFullRedraw = true;
-      Serial.println("BOOT button solto - Voltando para tela normal");
-    }
-  }
 
-  // Se o BOOT button continuar pressionado, verifica tempo para reset
-  if (boot_pressed && boot_button_pressed &&
-      millis() - boot_button_start >= RESET_FACTORY_MS) {
-    // Mostra alerta de reset na tela
-    static bool reset_warning_shown = false;
-    if (!reset_warning_shown) {
+      // Mostra alerta visual
       tft.fillScreen(TFT_RED);
       tft.setTextColor(TFT_WHITE, TFT_RED);
       tft.setTextSize(2);
       tft.setCursor(50, 100);
-      tft.println("ATENCAO!");
+      tft.println("ATENÇÃO!");
       tft.setCursor(30, 130);
-      tft.println("SOLTAR PARA");
+      tft.println("RESET FÁBRICA");
       tft.setCursor(30, 160);
-      tft.println("RESET DE FABRICA");
-      reset_warning_shown = true;
+      tft.println("REALIZADO!");
+
+      delay(1500);
+      ESP.restart();
+    } else {
+      // Debounce: evita múltiplas detecções muito rápidas
+      unsigned long now = millis();
+      if (now - last_boot_toggle >= BOOT_DEBOUNCE_MS) {
+        // Foi um toque curto - TOGGLE DA TELA (alternar entre normal e WiFi)
+        show_ip_screen = !show_ip_screen;  // Alterna o estado
+        needsFullRedraw = true;
+        first_draw = true;  // Força redraw completo
+        last_boot_toggle = now;
+
+        if (show_ip_screen) {
+          Serial.println("BOOT button - Mostrando TELA DO WIFI");
+        } else {
+          Serial.println("BOOT button - Voltando para TELA NORMAL");
+        }
+      }
     }
-  } else {
-    // Reseta flag de warning se não está em reset
-    static bool reset_warning_shown = false;
-    reset_warning_shown = false;
   }
 
   // ========== CONTROLE DE TOUCHSCREEN (MODO NORMAL) ==========

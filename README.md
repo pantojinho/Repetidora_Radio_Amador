@@ -372,6 +372,168 @@ Speaker 8Ω      ──────────────────── JS
 32. XP Error
 33. XP OK
 
+---
+
+## 🌐 Configuração via WiFi
+
+A repetidora possui um sistema completo de configuração via interface web, permitindo ajustar todos os parâmetros sem precisar recompilar o código.
+
+### 📻 Credenciais de Acesso WiFi
+
+O dispositivo cria automaticamente um Access Point WiFi no boot:
+
+| Credencial | Valor | Descrição |
+|-----------|-------|------------|
+| **SSID** | `REPETIDORA_SETUP` | Nome da rede WiFi para configuração |
+| **Senha** | `repetidora123` | Senha para acessar o AP |
+| **IP** | `192.168.4.1` | Endereço IP padrão do ESP32 em modo AP |
+
+### 🔧 Como Conectar e Configurar
+
+#### Passo 1: Conectar no WiFi AP
+1. Ative o WiFi no seu dispositivo (celular, tablet ou laptop)
+2. Procure pela rede `REPETIDORA_SETUP`
+3. Digite a senha: `repetidora123`
+4. Aguarde conectar
+
+#### Passo 2: Acessar a Interface Web
+1. Abra o navegador web (Chrome, Firefox, Safari, Edge, etc.)
+2. Digite o endereço IP: `http://192.168.4.1`
+3. Pressione Enter
+
+> **💡 Dica:** Se o IP for diferente (ex: 192.168.4.2), pressione o botão BOOT na placa para ver as informações do WiFi no display.
+
+#### Passo 3: Configurar Parâmetros
+1. Todas as configurações são organizadas em seções
+2. Faça as alterações desejadas
+3. Clique em "💾 Salvar e Reiniciar" no final da página
+4. O ESP32 reiniciará automaticamente com as novas configurações
+
+### 🎮 Controle via BOOT Button (GPIO 0)
+
+O botão BOOT integrado na placa ESP32-2432S028R fornece controle sobre a visualização:
+
+#### 1. Toque Rápido - Toggle de Tela
+- **Pressionar e soltar** o BOOT button alterna entre **tela normal** (repetidora) e **tela do WiFi** (informações de acesso)
+- Não afeta a operação da repetidora - continua funcionando normalmente
+
+#### 2. Toque Prolongado (> 5 segundos) - Reset de Fábrica
+- **Segurar BOOT button por 5+ segundos** restaura todas as configurações para os valores de fábrica padrão
+- Display mostra fundo vermelho com alerta "ATENÇÃO!" durante o reset
+- Ao soltar, o ESP32 reinicia com configurações limpas
+
+> **⚠️ AVISO:** O reset de fábrica apaga TODAS as configurações personalizadas. Use apenas se realmente precisar restaurar os valores padrão.
+
+### 🌐 Interface Web de Configuração
+
+A interface web é uma página HTML responsiva com design moderno, organizada em seções:
+
+#### Seções Disponíveis
+
+1. **📻 Informações Básicas**
+   - Indicativo (Callsign)
+   - Frequência (MHz)
+
+2. **🔊 Configurações Morse (CW)**
+   - Mensagem Morse (ID)
+   - Velocidade (WPM): 5-40
+   - Frequência do Tom (Hz): 300-1200
+
+3. **⏱️ Configurações de Tempos**
+   - Hang Time (ms): 100-2000
+   - PTT Timeout (s): 60-600
+   - Intervalo ID Voz (min): 5-30
+   - Intervalo ID CW (min): 5-30
+   - Troca CT (QSOs): 1-20
+
+4. **🎵 Configurações de Áudio**
+   - Volume: 0-100%
+   - Sample Rate (Hz): 8000/11025/16000/22050/44100
+
+5. **🔔 Courtesy Tone (CT)**
+   - Seletor dos 33 courtesy tones diferentes
+
+6. **🐛 Configurações de Debug**
+   - Nível de Debug: 0 (None), 1 (Minimal), 2 (Normal), 3 (Verbose)
+   - Console Debug: Visualização de logs em tempo real
+
+7. **⚙️ Botões de Ação**
+   - **💾 Salvar e Reiniciar:** Salva todas as configurações e reinicia o ESP32
+   - **🔄 Reiniciar Dispositivo:** Reinicia o ESP32 sem salvar
+   - **📋 Ver Console Debug:** Abre/fecha console de logs
+   - **⚠️ Reset de Fábrica:** Restaura configurações padrão
+
+### 📊 Tela de Informações WiFi
+
+Quando o BOOT button é pressionado, o display mostra:
+
+**Cabeçalho:**
+- Callsign: PY2KEP SP
+- Frequência: 439.450 MHz
+
+**Status Principal:**
+- Fundo: Ciano
+- Texto: "WIFI AP ATIVO"
+- Credenciais (3 linhas):
+  ```
+  SSID: REPETIDORA_SETUP
+  Senha: repetidora123
+  IP: 192.168.4.1
+  ```
+
+### 🔒 Armazenamento de Configurações
+
+As configurações são salvas automaticamente na memória não-volátil (NVS - Non-Volatile Storage) do ESP32:
+
+- **Biblioteca:** `Preferences.h`
+- **Namespace:** "config"
+- **Persistência:** Configurações sobrevivem a reinicialização do ESP32
+
+#### Configurações Salvas
+
+| Parâmetro | Chave | Valor Padrão | Descrição |
+|----------|-------|--------|--------|--------|
+| Callsign | `callsign` | `PY2KEP SP` | Indicativo da repetidora |
+| Frequência | `frequency` | `439.450` | Frequência em MHz |
+| Mensagem CW | `cw_message` | `PY2KEP SP` | Texto para ID Morse |
+| Velocidade CW | `cw_wpm` | `13` | Palavras por minuto |
+| Frequência CW | `cw_freq` | `600` | Hz do tom Morse |
+| Hang Time | `hang_time` | `600` | Tempo após QSO (ms) |
+| PTT Timeout | `ptt_timeout` | `240000` | Timeout máximo (4 min) |
+| ID Voz | `voice_interval` | `660000` | Intervalo ID voz (11 min) |
+| ID CW | `cw_interval` | `960000` | Intervalo ID CW (16 min) |
+| Troca CT | `ct_change` | `5` | QSOs para trocar CT |
+| CT Index | `ct_index` | `0` | CT selecionado (0-32) |
+| Volume | `volume` | `0.7` | Volume (0.0-1.0) |
+| Sample Rate | `sample_rate` | `22050` | Taxa de amostragem (Hz) |
+| Debug Level | `debug_level` | `1` | Nível de detalhamento |
+
+### 📞 Troubleshooting WiFi
+
+#### WiFi não Conecta
+- Verifique se o SSID `REPETIDORA_SETUP` está aparecendo
+- Digite a senha `repetidora123` corretamente
+- Verifique se o IP está correto (display mostra quando BOOT é pressionado)
+- Tente outro dispositivo para acessar o AP
+
+#### Display Não Mostra IP
+- Verifique se o BOOT button está sendo pressionado
+- Um toque rápido (pressione e solte) alterna a tela
+- Se a tela não mudar, verifique o código
+
+#### Botão "Salvar e Reiniciar" Não Funciona
+- Verifique no Serial Monitor: `Args recebidos: X`
+- Se X=0, nenhum dado foi recebido do formulário
+- Verifique se há mensagens de erro no Serial Monitor
+- Certifique-se de que todos os campos estão preenchidos
+
+#### Reset de Fábrica Inesperado
+- Verifique se o BOOT button não ficou preso
+- Segure exatamente 5 segundos para reset
+- Após reset, as configurações voltam aos valores padrão
+
+---
+
 ## 🎙 Sistema de Identificação Automática
 
 ### ⚠️ Ordem Correta de Upload
@@ -663,7 +825,14 @@ Recursos adicionais para quem deseja conhecer mais sobre a placa Cheap Yellow Di
 
 ## 📝 Changelog
 
-### v2.2 (Atual - Dezembro 2024)
+### v2.3 (Atual - Dezembro 2024)
+- ✅ **Correção do Botão "Salvar e Reiniciar"**: JavaScript corrigido para coletar valores manualmente dos campos do formulário
+- ✅ **Correção do Botão BOOT**: Lógica corrigida para alternar corretamente entre tela normal e tela WiFi
+- ✅ **Melhorias no Display**: Tela redesenhada automaticamente quando alterna entre modos
+- ✅ **Documentação Consolidada**: README único principal com todas as informações de WiFi integradas
+- ✅ **Documentação Atualizada**: Informações completas sobre configuração via WiFi, credenciais e troubleshooting
+
+### v2.2 (Dezembro 2024)
 - ✅ **Sistema de Debug Otimizado**: Níveis configuráveis (NONE/MINIMAL/NORMAL/VERBOSE)
 - ✅ **Correção Crítica**: Incremento de `qso_count` corrigido (troca automática de CT funcionando)
 - ✅ **Serial Monitor Limpo**: Mensagens otimizadas, menos ruído, mais informações relevantes

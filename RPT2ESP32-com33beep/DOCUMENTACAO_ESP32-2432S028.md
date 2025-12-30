@@ -8,6 +8,7 @@
 - [Layout da Tela](#layout-da-tela-320x240---paisagem)
 - [Conexão com o Rádio](#conexão-com-o-rádio-repetidora-setup)
 - [Funcionalidades](#funcionalidades)
+- [Configuração via WiFi](#configuração-via-wifi)
 - [Sistema de Identificação Automática](#sistema-de-identificação-automática)
 - [Bibliotecas Necessárias](#bibliotecas-necessárias)
 - [Troubleshooting](#troubleshooting)
@@ -276,6 +277,61 @@ Speaker 8Ω      ──────────────────── JS
   - **Centro**: Uptime em horas:minutos (amarelo)
   - **Direita**: CT Index (ciano)
 - **Barra de Progresso**: Aparece quando TX ativo (verde → laranja → vermelho)
+
+---
+
+## Configuração via WiFi
+
+A repetidora possui um sistema completo de configuração via interface web, permitindo ajustar todos os parâmetros sem precisar recompilar o código.
+
+### Credenciais de Acesso WiFi
+
+O dispositivo cria automaticamente um Access Point WiFi no boot:
+
+| Credencial | Valor | Descrição |
+|-----------|-------|------------|
+| **SSID** | `REPETIDORA_SETUP` | Nome da rede WiFi para configuração |
+| **Senha** | `repetidora123` | Senha para acessar o AP |
+| **IP** | `192.168.4.1` | Endereço IP padrão do ESP32 em modo AP |
+
+### Como Conectar e Configurar
+
+1. **Conectar no WiFi AP:**
+   - Ative o WiFi no seu dispositivo
+   - Procure pela rede `REPETIDORA_SETUP`
+   - Digite a senha: `repetidora123`
+
+2. **Acessar a Interface Web:**
+   - Abra o navegador e digite: `http://192.168.4.1`
+   - Pressione Enter
+
+3. **Configurar Parâmetros:**
+   - Todas as configurações são organizadas em seções
+   - Faça as alterações desejadas
+   - Clique em "💾 Salvar e Reiniciar"
+   - O ESP32 reiniciará automaticamente
+
+### Controle via BOOT Button (GPIO 0)
+
+- **Toque Rápido:** Alterna entre tela normal e tela do WiFi (mostra credenciais)
+- **Toque Prolongado (> 5s):** Reset de fábrica (restaura configurações padrão)
+
+### Interface Web
+
+A interface web permite configurar:
+- Informações básicas (Callsign, Frequência)
+- Configurações Morse (CW)
+- Configurações de tempos (Hang Time, PTT Timeout, Intervalos de ID)
+- Configurações de áudio (Volume, Sample Rate)
+- Courtesy Tone (seletor dos 33 CTs)
+- Nível de Debug
+
+### Armazenamento
+
+As configurações são salvas na memória não-volátil (NVS) do ESP32 usando a biblioteca `Preferences.h`:
+- **Namespace:** "config"
+- **Persistência:** Configurações sobrevivem a reinicialização
+- **Reset de Fábrica:** Limpa todas as configurações e restaura valores padrão
 
 ---
 
