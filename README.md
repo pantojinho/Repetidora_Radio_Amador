@@ -825,7 +825,7 @@ Recursos adicionais para quem deseja conhecer mais sobre a placa Cheap Yellow Di
 
 ## 📝 Changelog
 
-### v2.3 (Atual - Dezembro 2024)
+### v2.3 (Atual - 29 de Dezembro de 2025)
 - ✅ **Correção do Botão "Salvar e Reiniciar"**: JavaScript corrigido para coletar valores manualmente dos campos do formulário
 - ✅ **Correção do Botão BOOT**: Lógica corrigida para alternar corretamente entre tela normal e tela WiFi
 - ✅ **Melhorias no Display**: Tela redesenhada automaticamente quando alterna entre modos

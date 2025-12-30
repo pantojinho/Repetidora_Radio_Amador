@@ -1830,6 +1830,15 @@ void updateDisplay() {
         int16_t freq_x = (W - freqW) / 2;
         tft.setCursor(freq_x, 35);
         tft.print(freq_str);
+      } else {
+        // Em modo WiFi, mostra "WIFI AP ATIVO" no header
+        tft.setTextColor(TFT_YELLOW, TFT_DARKBLUE);
+        tft.setTextSize(3);
+        const char* wifi_title = "WIFI AP ATIVO";
+        int16_t titleW = tft.textWidth(wifi_title);
+        int16_t title_x = (W - titleW) / 2;
+        tft.setCursor(title_x, 18);
+        tft.print(wifi_title);
       }
 
       // Linha separadora
@@ -1848,7 +1857,7 @@ void updateDisplay() {
       // MOSTRAR IP E CREDENCIAIS (BOOT button pressionado)
       status_bg = TFT_CYAN;
       status_text_color = TFT_BLACK;
-      status_text = "WIFI AP ATIVO";
+      status_text = "";  // Não desenha texto principal (está no header)
       status_subtext = "";  // Será desenhado separadamente abaixo
     } else if (tx_mode == TX_VOICE) {
       status_bg = TFT_RED;
@@ -1909,42 +1918,55 @@ void updateDisplay() {
       }
     }
     
+    // Declara variáveis para uso em debug e limpeza (fora do if para estar no escopo correto)
+    int16_t status_text_w = 0;
+    int16_t status_text_y = 0;
+    int16_t clear_x = 0;
+    
     // Texto de status grande - SEMPRE redesenhado para garantir visibilidade
-    tft.setTextColor(status_text_color, status_bg);
-    tft.setTextSize(3);
-    
-    // Usa setCursor e print ao invés de drawCentreString para garantir funcionamento
-    int16_t status_text_w = tft.textWidth(status_text);
-    // Centralizado verticalmente com um pequeno ajuste (+2px) para visualização melhor
-    int16_t status_text_y = status_y + (status_h - 24) / 2 + 2; 
-    
-    // LIMPEZA EXTRA: Apaga retângulo exato onde o texto vai ficar antes de escrever
-    // Sempre limpa para evitar texto fantasma, especialmente em modo "EM ESCUTA"
-    int16_t clear_x = (W - status_text_w) / 2;
-    // Limpa área do texto principal (não limpa área abaixo para não interferir)
-    tft.fillRect(10, status_text_y - 2, W - 20, 28, status_bg);
+    // NÃO desenha se está em modo WiFi (texto está no header)
+    if (status_text[0] != '\0' && !show_ip_screen) {
+      tft.setTextColor(status_text_color, status_bg);
+      tft.setTextSize(3);
+      
+      // Usa setCursor e print ao invés de drawCentreString para garantir funcionamento
+      status_text_w = tft.textWidth(status_text);
+      // Centralizado verticalmente com um pequeno ajuste (+2px) para visualização melhor
+      status_text_y = status_y + (status_h - 24) / 2 + 2; 
+      
+      // LIMPEZA EXTRA: Apaga retângulo exato onde o texto vai ficar antes de escrever
+      // Sempre limpa para evitar texto fantasma, especialmente em modo "EM ESCUTA"
+      clear_x = (W - status_text_w) / 2;
+      // Limpa área do texto principal (não limpa área abaixo para não interferir)
+      tft.fillRect(10, status_text_y - 2, W - 20, 28, status_bg);
 
-    // Desenha o texto principal
-    tft.setCursor(clear_x, status_text_y);
-    tft.print(status_text);
+      // Desenha o texto principal
+      tft.setCursor(clear_x, status_text_y);
+      tft.print(status_text);
+    } else if (show_ip_screen) {
+      // Em modo WiFi, limpa área do texto principal
+      tft.fillRect(10, status_y, W - 20, 30, status_bg);
+      // Define valores padrão para evitar uso de variáveis não inicializadas
+      status_text_y = status_y + (status_h - 24) / 2 + 2;
+    }
     
-    // Se está em modo WiFi, desenha informações do WiFi abaixo do texto principal
+    // Se está em modo WiFi, desenha informações do WiFi no centro (texto maior)
     if (show_ip_screen) {
-      tft.setTextSize(1);
+      tft.setTextSize(2);  // Aumentado de 1 para 2 (texto maior)
       tft.setTextColor(TFT_BLACK, status_bg);
       
       // SSID
       char ssid_line[64];
       snprintf(ssid_line, sizeof(ssid_line), "SSID: %s", AP_SSID);
       int16_t ssid_w = tft.textWidth(ssid_line);
-      tft.setCursor((W - ssid_w) / 2, status_y + 35);
+      tft.setCursor((W - ssid_w) / 2, status_y + 25);
       tft.print(ssid_line);
       
       // Senha
       char pwd_line[64];
       snprintf(pwd_line, sizeof(pwd_line), "Senha: %s", AP_PASSWORD);
       int16_t pwd_w = tft.textWidth(pwd_line);
-      tft.setCursor((W - pwd_w) / 2, status_y + 50);
+      tft.setCursor((W - pwd_w) / 2, status_y + 45);
       tft.print(pwd_line);
       
       // IP
@@ -1956,7 +1978,7 @@ void updateDisplay() {
     }
     
     // Debug adicional para modo "EM ESCUTA" (apenas em modo verbose)
-    if (DEBUG_JSON && status_bg == TFT_GREEN) {
+    if (DEBUG_JSON && status_bg == TFT_GREEN && status_text_w > 0) {
       Serial.printf("TEXTO 'EM ESCUTA' DESENHADO: x=%d, y=%d, w=%d\n", 
                     clear_x, status_text_y, status_text_w);
     }
@@ -1998,7 +2020,7 @@ void updateDisplay() {
 
       tft.setCursor((W - qso_w) / 2, status_y + 60);
       tft.print("QSO ATUAL");
-    } else if (!show_ip_screen) {
+    } else if (!show_ip_screen && status_text_y > 0) {
       // Limpa área de subtexto e código Morse se não está em TX (evita texto fantasma)
       // IMPORTANTE: NÃO limpar área do texto principal!
       // status_text_y está aproximadamente em y=100 (status_y + 33 + 2)
@@ -2011,32 +2033,37 @@ void updateDisplay() {
       }
     }
   
-    // ========== COURTESY TONE (Abaixo do status) ==========
-    int16_t ct_y = 155;  // Ajustado de 145 para 155
-    static uint8_t last_ct_index = 255;  // Para detectar mudança
-    
-    // Só redesenha CT se mudou ou primeira vez
-    if (ct_index != last_ct_index || isFullRedraw) {
-      tft.fillRoundRect(10, ct_y, W - 20, 35, 5, TFT_DARKGREEN);  // Caixa verde com bordas arredondadas    
-      tft.drawRoundRect(10, ct_y, W - 20, 35, 5, TFT_CYAN);  // Borda ciano
-      last_ct_index = ct_index;
+    // ========== COURTESY TONE (Abaixo do status) - NÃO mostra em modo WiFi ==========
+    if (!show_ip_screen) {
+      int16_t ct_y = 155;  // Ajustado de 145 para 155
+      static uint8_t last_ct_index = 255;  // Para detectar mudança
+      
+      // Só redesenha CT se mudou ou primeira vez
+      if (ct_index != last_ct_index || isFullRedraw) {
+        tft.fillRoundRect(10, ct_y, W - 20, 35, 5, TFT_DARKGREEN);  // Caixa verde com bordas arredondadas    
+        tft.drawRoundRect(10, ct_y, W - 20, 35, 5, TFT_CYAN);  // Borda ciano
+        last_ct_index = ct_index;
+      }
+
+      // Mostra o CT selecionado (como no código original)
+      tft.setTextColor(TFT_WHITE, TFT_DARKGREEN);
+      tft.setTextSize(2);
+      tft.setCursor(20, ct_y + 8);
+      tft.print("CT: ");
+      tft.setTextColor(TFT_YELLOW, TFT_DARKGREEN);
+      tft.print(tones[ct_index].name);
+
+      // Número do CT (direita)
+      char mode_buf[12];
+      snprintf(mode_buf, sizeof(mode_buf), "%02d/33", ct_index + 1);
+      tft.setTextColor(TFT_CYAN, TFT_DARKGREEN);
+      tft.setTextSize(2);
+      tft.setCursor(W - 70, ct_y + 8);
+      tft.print(mode_buf);
+    } else {
+      // Em modo WiFi, limpa a área do CT
+      tft.fillRect(10, 155, W - 20, 35, TFT_BLACK);
     }
-
-    // Mostra o CT selecionado (como no código original)
-    tft.setTextColor(TFT_WHITE, TFT_DARKGREEN);
-    tft.setTextSize(2);
-    tft.setCursor(20, ct_y + 8);
-    tft.print("CT: ");
-    tft.setTextColor(TFT_YELLOW, TFT_DARKGREEN);
-    tft.print(tones[ct_index].name);
-
-    // Número do CT (direita)
-    char mode_buf[12];
-    snprintf(mode_buf, sizeof(mode_buf), "%02d/33", ct_index + 1);
-    tft.setTextColor(TFT_CYAN, TFT_DARKGREEN);
-    tft.setTextSize(2);
-    tft.setCursor(W - 70, ct_y + 8);
-    tft.print(mode_buf);
   
     // ========== ESTATÍSTICAS (Rodapé, 3 colunas) ==========
     int16_t footer_y = 195;  // Ajustado para compensar header maior
@@ -2083,16 +2110,22 @@ void updateDisplay() {
       uptime_label_drawn = true;
     }
 
-    // Coluna 3: CT Index (direita) - Ajustado para não sair da tela
-    // Usando largura segura do texto (~45px para "XX/33")
-    int16_t ct_text_w = tft.textWidth("00/33");
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.setTextSize(1);
-    tft.setCursor(W - ct_text_w - 5, footer_y + 5);
-    tft.print("CT:");
-    tft.setTextSize(2);
-    tft.setCursor(W - ct_text_w - 5, footer_y + 15);
-    tft.printf("%02d/33", ct_index + 1);
+    // Coluna 3: CT Index (direita) - NÃO mostra em modo WiFi
+    if (!show_ip_screen) {
+      // Usando largura segura do texto (~45px para "XX/33")
+      int16_t ct_text_w = tft.textWidth("00/33");
+      tft.setTextColor(TFT_CYAN, TFT_BLACK);
+      tft.setTextSize(1);
+      tft.setCursor(W - ct_text_w - 5, footer_y + 5);
+      tft.print("CT:");
+      tft.setTextSize(2);
+      tft.setCursor(W - ct_text_w - 5, footer_y + 15);
+      tft.printf("%02d/33", ct_index + 1);
+    } else {
+      // Em modo WiFi, limpa a área do CT no rodapé
+      int16_t ct_text_w = tft.textWidth("00/33");
+      tft.fillRect(W - ct_text_w - 5, footer_y, ct_text_w + 10, footer_h, TFT_BLACK);
+    }
   
     // Linha separadora no rodapé
     tft.drawFastHLine(5, footer_y - 2, W - 10, TFT_DARKGREY);
