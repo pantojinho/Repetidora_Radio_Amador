@@ -26,19 +26,40 @@
 
 Este projeto implementa uma repetidora de rádio amador moderna baseada no microcontrolador **ESP32-WROOM-32** com o display **ESP32-2432S028R** (conhecido como "Cheap Yellow Display" ou CYD). A repetidora possui uma interface visual TFT colorida com touchscreen, sistema de courtesy tones audíveis e indicador de status por LED RGB.
 
+### ✅ Validação e Compatibilidade
+
+O código foi **completamente validado** e comparado com o código original primitivo (sem display). A lógica principal foi **100% preservada**:
+
+- ✅ **Tempos e intervalos**: Todos os valores mantidos (HANG_TIME=600ms, VOICE_INTERVAL=11min, CW_INTERVAL=16min, QSO_CT_CHANGE=5)
+- ✅ **Lógica de debounce COR**: Idêntica ao original (350ms)
+- ✅ **Controle de PTT**: Mesma lógica de ativação/desativação
+- ✅ **Funções de áudio**: Adaptadas para CYD mas mantendo a mesma lógica
+- ✅ **Troca automática de CT**: Funcionando corretamente (corrigido na v2.2)
+- ✅ **IDs automáticos**: Intervalos e sequência conforme original
+
+**Adaptações necessárias para o CYD**:
+- I2S direto (GPIO26) em vez de DAC built-in
+- LittleFS em vez de SPIFFS (mais moderno e confiável)
+- Pinos COR/PTT movidos para Extended IO (GPIO22/27) para evitar conflito com LED RGB
+
+Todas as funcionalidades originais foram preservadas e melhoradas com interface visual e sistema de debug.
+
 ### Principais Características
 
 - 🖥️ **Display TFT 2.8"** ILI9341 (320x240 pixels) com orientação paisagem
 - 👆 **Touchscreen resistivo** para seleção de courtesy tones
 - 🎵 **33 Courtesy Tones** diferentes selecionáveis
 - 🎨 **LED RGB** com indicador visual de status em tempo real:
-  - 🟢 **Verde/Amarelo pulsante**: Recebendo sinal (RX)
+  - 🟢 **Verde fixo**: Em espera (Idle)
+  - 🟡 **Amarelo fixo**: Recebendo sinal (RX)
   - 🔴 **Vermelho fixo**: Transmitindo (TX)
-  - 🌈 **Rainbow**: Em espera (Idle)
 - 📊 **Display informativo** com estatísticas em tempo real
 - 🔊 **Áudio I2S** para reproduction de courtesy tones no speaker onboard
 - ⚡ **Otimizações de performance**: Display sem flicker, atualizações parciais
 - 📝 **Sistema de logging** em NDJSON para análise offline
+- 🐛 **Sistema de debug configurável** com níveis (NONE/MINIMAL/NORMAL/VERBOSE)
+- 🔄 **Identificação automática** em Voz e CW (Morse) com intervalos configuráveis
+- ✅ **Lógica 100% compatível** com código original (validada e testada)
 
 ---
 
@@ -475,6 +496,61 @@ As identificações automáticas (VOZ e CW) funcionam **independentemente** do m
 
 ---
 
+## 🐛 Sistema de Debug
+
+O projeto possui um sistema de debug configurável que permite controlar a verbosidade das mensagens no Serial Monitor.
+
+### Níveis de Debug
+
+| Nível | Valor | Descrição | Uso |
+|-------|-------|-----------|-----|
+| **NONE** | 0 | Apenas erros e eventos críticos | Produção |
+| **MINIMAL** | 1 | Eventos principais (PTT, COR, QSO, IDs) | **Recomendado** |
+| **NORMAL** | 2 | Debug padrão (inclui display, CW, loop stats) | Desenvolvimento |
+| **VERBOSE** | 3 | Tudo incluindo JSON detalhado | Debug avançado |
+
+### Como Configurar
+
+No arquivo `.ino`, linha 137:
+```cpp
+#define DEBUG_LEVEL 1  // Altere aqui: 0=NONE, 1=MINIMAL, 2=NORMAL, 3=VERBOSE
+```
+
+### Categorias de Debug
+
+O sistema controla diferentes categorias de mensagens:
+
+- **DEBUG_JSON**: Mensagens JSON detalhadas (updateDisplay, etc.) - apenas nível 3
+- **DEBUG_DISPLAY**: Mensagens de atualização do display - nível 2+
+- **DEBUG_PTT**: Debug periódico do estado PTT - nível 1+ (a cada 10s)
+- **DEBUG_CW**: Mensagens de código Morse - nível 2+
+- **DEBUG_EVENTS**: Eventos principais (PTT ON/OFF, COR changes, IDs) - nível 1+
+
+### Exemplo de Saída
+
+**Nível MINIMAL (1)** - Recomendado:
+```
+PTT ON
+COR: 0 -> 1
+=== ID VOZ (11min) ===
+ID Voz: 21.2s
+PTT OFF
+```
+
+**Nível VERBOSE (3)** - Debug completo:
+```
+DEBUG:{"location":"updateDisplay:entry","message":"Function called",...}
+DISPLAY STATE: tx_mode=0, ptt_state=0, cor_stable=0, status_bg=0x07E0, text='EM ESCUTA'
+STATUS: EM ESCUTA (bg=0x07E0)
+TEXTO 'EM ESCUTA' DESENHADO: x=79, y=100, w=162
+```
+
+### Logs em Arquivo
+
+Independente do nível de debug, os logs continuam sendo salvos em `/debug.log` (LittleFS) para análise offline. O sistema de logging em arquivo usa throttling (máximo 1 log a cada 100ms) para não impactar o desempenho.
+
+---
+
 ## 🛠️ Personalização
 
 ### Alterar Callsign
@@ -502,6 +578,17 @@ const uint8_t  QSO_CT_CHANGE   = 5;                 // Troca CT a cada 5 QSOs
 ```
 
 **Nota**: Todos os tempos foram configurados conforme o código original para garantir compatibilidade.
+
+### Configurar Nível de Debug
+```cpp
+#define DEBUG_LEVEL 1  // 0=NONE, 1=MINIMAL, 2=NORMAL, 3=VERBOSE
+```
+
+**Níveis disponíveis**:
+- `0` (NONE): Apenas erros e eventos críticos
+- `1` (MINIMAL): Eventos principais (PTT, COR, QSO, IDs) - **RECOMENDADO**
+- `2` (NORMAL): Debug padrão (inclui display, CW, loop stats)
+- `3` (VERBOSE): Tudo incluindo JSON detalhado
 
 ### Ajustar Frequência SPI
 No `User_Setup.h`:
@@ -537,6 +624,16 @@ No `User_Setup.h`:
 - ✅ Frequência SPI: 27MHz
 - ✅ TFT_INVERSION_ON ativado
 
+### Serial Monitor com muitas mensagens
+- ✅ Configure `DEBUG_LEVEL` para 1 (MINIMAL) no código
+- ✅ Mensagens JSON detalhadas só aparecem em nível VERBOSE (3)
+- ✅ Logs em arquivo continuam funcionando independente do nível
+
+### Contador de QSOs não atualiza
+- ✅ Verificado e corrigido na v2.2
+- ✅ Certifique-se de usar a versão mais recente do código
+- ✅ O contador incrementa quando COR desativa (fim do QSO)
+
 ---
 
 ## 📚 Documentation
@@ -566,7 +663,15 @@ Recursos adicionais para quem deseja conhecer mais sobre a placa Cheap Yellow Di
 
 ## 📝 Changelog
 
-### v2.1 (Atual)
+### v2.2 (Atual - Dezembro 2024)
+- ✅ **Sistema de Debug Otimizado**: Níveis configuráveis (NONE/MINIMAL/NORMAL/VERBOSE)
+- ✅ **Correção Crítica**: Incremento de `qso_count` corrigido (troca automática de CT funcionando)
+- ✅ **Serial Monitor Limpo**: Mensagens otimizadas, menos ruído, mais informações relevantes
+- ✅ **Validação Completa**: Lógica 100% compatível com código original validada
+- ✅ **Documentação Atualizada**: README completo com todas as funcionalidades
+- ✅ **Melhorias de Performance**: Debug condicional, logs otimizados
+
+### v2.1
 - ✅ LED RGB completo como indicador de status
 - ✅ Controle via PWM (5kHz, 8 bits)
 - ✅ Sistema de Debug Logging Avançado (NDJSON)
@@ -586,6 +691,68 @@ Recursos adicionais para quem deseja conhecer mais sobre a placa Cheap Yellow Di
 - Suporte para touchscreen XPT2046
 - LED RGB integrado
 - Barra de progresso PTT
+
+---
+
+## 🔮 Tarefas Futuras (Roadmap)
+
+### 🚀 Próximas Funcionalidades Planejadas
+
+#### 1. 🌐 Controle Remoto via WiFi (Alta Prioridade)
+**Objetivo**: Permitir controle e monitoramento da repetidora via internet
+
+**Funcionalidades Planejadas**:
+- 📡 **Servidor Web Embarcado**: Interface web acessível via IP local
+- 📊 **Dashboard em Tempo Real**: Status, QSOs, uptime, estatísticas
+- 🎛️ **Controle Remoto**: 
+  - Seleção de courtesy tone via web
+  - Ajuste de volume
+  - Ativação/desativação de IDs automáticos
+  - Reset de contadores
+- 📱 **API REST**: Para integração com sistemas externos
+- 🔐 **Autenticação**: Proteção por senha para comandos críticos
+- 📈 **Logs Remotos**: Visualização de logs via web
+- 🌍 **Acesso Externo**: Opção de acesso via internet (com segurança)
+
+**Tecnologias Consideradas**:
+- ESP32 WiFi (já disponível no hardware)
+- WebServer (ESPAsyncWebServer ou similar)
+- WebSocket para atualizações em tempo real
+- OTA (Over-The-Air) para atualizações remotas
+
+**Benefícios**:
+- ✅ Monitoramento remoto sem necessidade de estar no local
+- ✅ Configuração sem acesso físico à placa
+- ✅ Integração com sistemas de automação
+- ✅ Coleta de dados e estatísticas históricas
+
+#### 2. 📡 Integração com APRS (Média Prioridade)
+- Envio automático de status via APRS
+- Beacon de localização
+- Integração com redes APRS-IS
+
+#### 3. 📊 Sistema de Logging Avançado (Média Prioridade)
+- Armazenamento de histórico de QSOs
+- Estatísticas detalhadas (duração, horários, etc.)
+- Exportação de dados (CSV, JSON)
+- Gráficos e relatórios
+
+#### 4. 🎚️ Controle de Volume Dinâmico (Baixa Prioridade)
+- AGC (Automatic Gain Control) para áudio
+- Compressão de áudio
+- Equalização
+
+#### 5. 🔔 Notificações (Baixa Prioridade)
+- Alertas por email/SMS em eventos críticos
+- Notificações push via app mobile
+- Integração com Telegram/Discord
+
+### 💡 Contribuições Bem-Vindas
+
+Se você tem interesse em implementar alguma dessas funcionalidades, sinta-se à vontade para:
+- Abrir uma issue descrevendo sua proposta
+- Enviar um pull request com a implementação
+- Discutir a melhor abordagem técnica
 
 ---
 

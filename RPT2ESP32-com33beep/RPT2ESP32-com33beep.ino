@@ -1685,7 +1685,8 @@ void loop() {
       // COR ativado → INÍCIO DO QSO → PTT ON (usando setPTT)
       setPTT(true);
     } else if (!cor_stable && ptt_state && !ptt_locked) {
-      // COR desativado → FIM DO QSO → HANG TIME → CT → PTT OFF
+      // COR desativado → FIM DO QSO → INCREMENTA CONTADOR → HANG TIME → CT → PTT OFF
+      qso_count++;  // CRÍTICO: Incrementa contador de QSOs (conforme código original)
       delay(HANG_TIME_MS);  // Aguarda hang time (600ms)
       if (!playing) {
         playCT();  // Reproduz courtesy tone selecionado
@@ -1693,7 +1694,7 @@ void loop() {
       setPTT(false);
 
       // Troca automática do CT a cada 5 QSOs (código original)
-      if (qso_count % 5 == 0) {
+      if (qso_count % QSO_CT_CHANGE == 0) {
         ct_index = (ct_index + 1) % N_CT;
         Serial.printf("*** Novo Courtesy Tone: %s (CT %02d/33) ***\n", tones[ct_index].name, ct_index + 1);
         needsFullRedraw = true;  // Marca para atualizar display com novo CT
