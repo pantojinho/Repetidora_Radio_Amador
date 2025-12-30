@@ -529,6 +529,12 @@ Radioamador brasileiro e desenvolvedor de projetos para a comunidade.
 - 💻 **GitHub**: [pantojinho](https://github.com/pantojinho)
 - 🌐 **Repositório**: [github.com/pantojinho/Repetidora_Radio_Amador](https://github.com/pantojinho/Repetidora_Radio_Amador)
 
+**Junior** - **PY2PER**
+
+Radioamador brasileiro e co-desenvolvedor do projeto.
+
+- 📻 **Indicativo**: PY2PER
+
 ### Sobre o Projeto
 
 Desenvolvido como um projeto open source para a comunidade de rádio amador, com foco em:
@@ -589,6 +595,7 @@ Este projeto está licenciado sob a [Licença MIT](LICENSE).
 <div align="center">
 
 **📡 Gabriel Ciandrini - PU2PEG**
+**📡 Junior - PY2PER**
 
 Feito com ❤️ para a comunidade de rádio amador
 

@@ -353,7 +353,7 @@ Contribuições são bem-vindas! Sinta-se à vontade para:
 
 ---
 
-## 👨‍💻 Autor
+## 👨‍💻 Autores
 
 **Gabriel Ciandrini** - **PU2PEG**
 
@@ -362,6 +362,13 @@ Radioamador brasileiro e desenvolvedor de projetos para a comunidade.
 📍 **Localização**: Brasil  
 📻 **Indicativo**: PU2PEG  
 💻 **GitHub**: [pantojinho](https://github.com/pantojinho)
+
+**Junior** - **PY2PER**
+
+Radioamador brasileiro e co-desenvolvedor do projeto.
+
+📍 **Localização**: Brasil  
+📻 **Indicativo**: PY2PER
 
 ### Sobre o Projeto
 
@@ -392,12 +399,14 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICE
 - Comunidadade ESP32 e Arduino
 - Comunidadade de rádio amador
 - A todos que testaram e deram feedback
+- Especial agradecimento ao **Junior PY2PER** pelo apoio e contribuição ao projeto
 
 ---
 
 <div align="center">
 
 **📡 Gabriel Ciandrini - PU2PEG**
+**📡 Junior - PY2PER**
 
 Feito com ❤️ para a comunidade de rádio amador
 
