@@ -60,6 +60,28 @@
 // =================================================
 // A repetidora se identifica automaticamente em intervalos regulares:
 //
+// IDENTIFICAÇÃO INICIAL (apenas uma vez no boot):
+// ===============================================
+// Ao ligar a placa pela primeira vez, são realizadas duas identificações:
+//
+// 1. ID Inicial em Voz:
+//    - Timing: Imediatamente após o setup (aguarda 2 segundos)
+//    - Formato: Arquivo WAV com indicativo da repetidora
+//    - Ativado: Sempre no primeiro boot
+//    - Display: Mostra "TX VOZ" + "INDICATIVO VOZ" com fundo vermelho
+//
+// 2. ID Inicial em CW (Morse):
+//    - Timing: 1 minuto após o ID inicial em voz (62 segundos total)
+//    - Velocidade: 13 WPM (palavras por minuto)
+//    - Frequência: 600 Hz
+//    - Display: Mostra "TX CW" + "MORSE CODE" com fundo vermelho
+//    - Visualização: Exibe cada caractere e código Morse em tempo real
+//
+// Após completar os IDs iniciais, o sistema entra no ciclo normal.
+//
+// CICLO NORMAL (após IDs iniciais):
+// =================================
+//
 // 1. ID em Voz:
 //    - Intervalo: 11 minutos (conforme código original)
 //    - Formato: Arquivo WAV com indicativo da repetidora
@@ -208,6 +230,10 @@ TxMode tx_mode = TX_NONE;  // Tipo de transmissão ativa
 // Texto atual sendo transmitido em Morse (para exibição no display)
 char current_morse_char[64] = "";  // Armazena o código Morse atual
 char current_morse_display[2] = "";  // Caractere atual sendo transmitido
+
+// Identificação inicial no boot
+bool initial_id_done = false;  // Flag para controle de ID inicial
+unsigned long boot_time = 0;  // Timestamp de quando a placa foi ligada
 
 // Timers para Identificação Automática (ID Voice/CW)
 unsigned long last_voice = 0;      // Última identificação em voz
@@ -1342,6 +1368,10 @@ void setup() {
   logToFile("D", "SETUP_COMPLETE", millis(), ESP.getFreeHeap(), ESP.getHeapSize(), 0);
   Serial.printf("Setup finalizado - Heap livre: %d / %d bytes\n", ESP.getFreeHeap(), ESP.getHeapSize());
   // #endregion
+
+  // Marca tempo de boot para identificação inicial
+  boot_time = millis();
+  Serial.println("Sistema pronto - Aguardando identificação inicial...");
 }
 
 // ====================== LOOP =========================
@@ -1511,10 +1541,53 @@ void loop() {
   }
 
   // ========== IDENTIFICAÇÃO AUTOMÁTICA (ID VOZ e CW) ==========
-  // Identificação em voz a cada 10 minutos (sem QSO ativo)
-  if (millis() - last_voice >= VOICE_INTERVAL_MS && !playing && !ptt_state) {
+
+  // Identificação INICIAL no boot (apenas uma vez)
+  if (!initial_id_done && !playing && !ptt_state) {
+    unsigned long time_since_boot = millis() - boot_time;
+
+    // Primeiro ID: Voz imediatamente após o setup (aguarda 2 segundos)
+    if (time_since_boot >= 2000 && time_since_boot < 62000) {
+      Serial.println("=== IDENTIFICAÇÃO INICIAL EM VOZ ===");
+      tx_mode = TX_VOICE;
+      updateDisplay();
+      digitalWrite(PIN_PTT, HIGH);
+      delay(100);
+      playVoiceFile("/id_voz_8k16.wav");
+      delay(100);
+      digitalWrite(PIN_PTT, LOW);
+      tx_mode = TX_NONE;
+      updateDisplay();
+      Serial.println("Identificação inicial de voz concluída");
+    }
+    // Segundo ID: CW após 1 minuto do boot (62 segundos total)
+    else if (time_since_boot >= 62000) {
+      Serial.println("=== IDENTIFICAÇÃO INICIAL EM CW ===");
+      tx_mode = TX_CW;
+      updateDisplay();
+      digitalWrite(PIN_PTT, HIGH);
+      delay(100);
+      playCW(CALLSIGN);
+      delay(100);
+      digitalWrite(PIN_PTT, LOW);
+      tx_mode = TX_NONE;
+      updateDisplay();
+      Serial.println("Identificação inicial CW concluída");
+
+      // Marca que os IDs iniciais foram completados
+      initial_id_done = true;
+
+      // Reseta os timers para o ciclo normal
+      last_voice = millis();
+      last_cw = millis();
+      Serial.println("=== INICIANDO CICLO NORMAL DE IDENTIFICAÇÃO ===");
+    }
+  }
+
+  // Identificação em voz a cada 11 minutos (após IDs iniciais)
+  if (initial_id_done && millis() - last_voice >= VOICE_INTERVAL_MS && !playing && !ptt_state) {
     last_voice = millis();
-    Serial.println("=== IDENTIFICAÇÃO EM VOZ (10 min) ===");
+    Serial.println("=== IDENTIFICAÇÃO EM VOZ (11 min) ===");
     tx_mode = TX_VOICE;  // Define modo de transmissão
     updateDisplay();  // Atualiza display para mostrar TX VOZ
     digitalWrite(PIN_PTT, HIGH);  // PTT ON
@@ -1527,10 +1600,10 @@ void loop() {
     Serial.println("Identificação de voz concluída");
   }
 
-  // Identificação em CW (Morse) a cada 30 minutos (sem QSO ativo)
-  if (millis() - last_cw >= CW_INTERVAL_MS && !playing && !ptt_state) {
+  // Identificação em CW (Morse) a cada 16 minutos (após IDs iniciais)
+  if (initial_id_done && millis() - last_cw >= CW_INTERVAL_MS && !playing && !ptt_state) {
     last_cw = millis();
-    Serial.println("=== IDENTIFICAÇÃO EM CW (30 min) ===");
+    Serial.println("=== IDENTIFICAÇÃO EM CW (16 min) ===");
     tx_mode = TX_CW;  // Define modo de transmissão
     updateDisplay();  // Atualiza display para mostrar TX CW
     digitalWrite(PIN_PTT, HIGH);  // PTT ON

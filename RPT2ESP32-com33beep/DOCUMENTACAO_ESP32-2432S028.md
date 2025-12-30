@@ -281,6 +281,19 @@ Speaker 8Ω      ──────────────────── JS
 
 A repetidora possui sistema completo de identificação automática em três modos:
 
+### 0. Identificação Inicial (apenas uma vez no boot)
+- **Quando**: Ao ligar a placa pela primeira vez
+- **ID Inicial em Voz**:
+  - Timing: Imediatamente após o setup (aguarda 2 segundos)
+  - Formato: Arquivo WAV com indicativo da repetidora
+  - Display: Mostra "TX VOZ" + "INDICATIVO VOZ" com fundo vermelho
+- **ID Inicial em CW**:
+  - Timing: 1 minuto após o ID inicial em voz (62 segundos total do boot)
+  - Velocidade: 13 WPM, Frequência: 600 Hz
+  - Display: Mostra "TX CW" + "MORSE CODE" com fundo vermelho
+  - Visualização: Exibe cada caractere e código Morse em tempo real
+- **Após IDs iniciais**: O sistema inicia o ciclo normal de identificação
+
 ### 1. Courtesy Tone (após cada QSO)
 - **Quando**: Após cada transmissão ser concluída (COR desativado)
 - **Modo**: 33 courtesy tones diferentes (selecionáveis via touchscreen)
@@ -289,7 +302,7 @@ A repetidora possui sistema completo de identificação automática em três mod
 - **Troca Automática**: O CT é alterado automaticamente a cada **5 QSOs** (conforme código original)
 - **Índice**: Atualiza ciclicamente de 1 a 33 (volta para 1 após o 33)
 
-### 2. Identificação em Voz
+### 2. Identificação em Voz (ciclo normal)
 - **Intervalo**: A cada **11 minutos** (se nenhum QSO ativo) - conforme código original
 - **Arquivo**: `/id_voz_8k16.wav` na memória SPIFFS
 - **Conteúdo**: Repete o indicativo da repetidora (ex: "PY2KEP SP")
@@ -297,8 +310,9 @@ A repetidora possui sistema completo de identificação automática em três mod
 - **Função**: `playVoiceFile()` lê arquivo do SPIFFS e reproduz via I2S
 - **Comportamento**: PTT ON -> Toca voz -> PTT OFF (automático, independente do modo de áudio)
 - **Display**: Mostra "TX VOZ" + "INDICATIVO VOZ" com fundo vermelho durante transmissão
+- **Observação**: Só inicia após completar os IDs iniciais do boot
 
-### 3. Identificação em CW (Morse)
+### 3. Identificação em CW (Morse - ciclo normal)
 - **Intervalo**: A cada **16 minutos** (se nenhum QSO ativo) - conforme código original
 - **Velocidade**: 13 WPM (Words Per Minute)
 - **Frequência**: 600 Hz para tom CW
@@ -307,6 +321,7 @@ A repetidora possui sistema completo de identificação automática em três mod
 - **Comportamento**: PTT ON -> Toca Morse -> PTT OFF (automático)
 - **Display**: Mostra "TX CW" + "MORSE CODE" com fundo vermelho durante transmissão
 - **Visualização em Tempo Real**: Exibe cada caractere e código Morse sendo transmitido (ex: "P: .--.")
+- **Observação**: Só inicia após completar os IDs iniciais do boot
 
 ### Controle do Modo de Áudio
 
