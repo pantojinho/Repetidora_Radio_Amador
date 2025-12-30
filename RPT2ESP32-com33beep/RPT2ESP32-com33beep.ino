@@ -136,8 +136,8 @@
 // 2 = NORMAL: Debug padrão (inclui display, CW, loop stats) - sem JSON verbose
 // 3 = VERBOSE: Tudo incluindo JSON detalhado (para debug avançado)
 //
-// NOTA: DEBUG_LEVEL agora é uma variável configurável via interface web
-uint8_t DEBUG_LEVEL = 1;  // 0=NONE, 1=MINIMAL, 2=NORMAL, 3=VERBOSE
+// NOTA: DEBUG_LEVEL sempre usa VERBOSE (nível máximo) para máximo de informações
+uint8_t DEBUG_LEVEL = 3;  // Sempre VERBOSE (nível máximo)
 
 // Flags de controle por categoria
 #define DEBUG_JSON (DEBUG_LEVEL >= 3)           // Mensagens JSON detalhadas
@@ -234,7 +234,8 @@ bool show_ip_screen = false;  // Flag para alternar entre tela normal e tela de 
 // ====================== VARIÁVEIS DE CONFIGURAÇÃO ======================
 // Estas variáveis podem ser configuradas via interface web
 char config_callsign[32] = "PY2KEP SP";  // Indicativo da repetidora
-char config_frequency[16] = "439.450";    // Frequência em MHz
+char config_frequency[16] = "439.450";    // Frequência (valor numérico)
+uint8_t config_frequency_unit = 0;         // 0 = MHz, 1 = GHz
 char config_cw_message[64] = "PY2KEP SP"; // Mensagem Morse (ID)
 
 // Configurações de tempos (milissegundos)
@@ -254,7 +255,7 @@ float config_volume = 0.70f;             // Volume (0.0 - 1.0)
 uint16_t config_sample_rate = 22050;    // Taxa de amostragem para áudio
 
 // Configurações de debug
-uint8_t config_debug_level = 1;         // Nível de debug (0=NONE, 1=MINIMAL, 2=NORMAL, 3=VERBOSE)
+uint8_t config_debug_level = 3;         // Sempre VERBOSE (nível máximo) - não configurável
 
 // ====================== CONFIG ORIGINAL (mantido para compatibilidade) =======================
 #define WDT_TIMEOUT_SECONDS 30
@@ -399,7 +400,12 @@ void loadPreferences() {
   // Carrega frequência
   if (preferences.isKey("frequency")) {
     preferences.getString("frequency", config_frequency, sizeof(config_frequency));
-    Serial.printf("Frequência: %s MHz\n", config_frequency);
+    Serial.printf("Frequência: %s\n", config_frequency);
+  }
+  // Carrega unidade de frequência (0 = MHz, 1 = GHz)
+  if (preferences.isKey("frequency_unit")) {
+    config_frequency_unit = preferences.getUChar("frequency_unit", 0);
+    Serial.printf("Unidade de Frequência: %s\n", config_frequency_unit == 0 ? "MHz" : "GHz");
   }
 
   // Carrega mensagem Morse
@@ -469,12 +475,10 @@ void loadPreferences() {
     Serial.printf("Sample Rate: %u Hz\n", config_sample_rate);
   }
 
-  // Carrega nível de debug
-  if (preferences.isKey("debug_level")) {
-    config_debug_level = preferences.getUChar("debug_level", 1);
-    DEBUG_LEVEL = config_debug_level;
-    Serial.printf("Debug Level: %d\n", config_debug_level);
-  }
+  // Debug level sempre VERBOSE (nível máximo) - não carrega do Preferences
+  config_debug_level = 3;
+  DEBUG_LEVEL = 3;
+  Serial.println("Debug Level: 3 (VERBOSE - sempre máximo)");
 
   preferences.end();
   Serial.println("Configurações carregadas com sucesso");
@@ -496,6 +500,7 @@ void savePreferences() {
 
   // Salva frequência
   preferences.putString("frequency", config_frequency);
+  preferences.putUChar("frequency_unit", config_frequency_unit);
 
   // Salva mensagem Morse
   preferences.putString("cw_message", config_cw_message);
@@ -530,8 +535,8 @@ void savePreferences() {
   // Salva sample rate
   preferences.putUInt("sample_rate", config_sample_rate);
 
-  // Salva nível de debug
-  preferences.putUChar("debug_level", config_debug_level);
+  // Debug level sempre VERBOSE - não salva (sempre usa máximo)
+  // preferences.putUChar("debug_level", config_debug_level);  // Removido
 
   preferences.end();
   Serial.println("Configurações salvas com sucesso");
@@ -598,89 +603,98 @@ String generateConfigPage() {
   html += "</head>";
   html += "<body>";
 
-  // Cabeçalho
+  // Cabeçalho com botão de idioma
   html += "<div class='container'>";
-  html += "<h1>📡 Configuração da Repetidora</h1>";
+  html += "<div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;'>";
+  html += "<h1 style='margin: 0;'>📡 Configuração da Repetidora</h1>";
+  html += "<button id='langBtn' onclick='toggleLanguage()' class='btn' style='padding: 8px 15px; font-size: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);'>🌐 PT</button>";
+  html += "</div>";
 
   // Status do sistema
   html += "<div class='section'>";
-  html += "<h2>⚙️ Status do Sistema</h2>";
+  html += "<h2 data-pt='⚙️ Status do Sistema' data-en='⚙️ System Status'>⚙️ Status do Sistema</h2>";
   html += "<div class='info'>";
-  html += "<span class='info-label'>Temperatura:</span>";
+  html += "<span class='info-label' data-pt='Temperatura:' data-en='Temperature:'>Temperatura:</span>";
   html += "<span class='info-value'>" + String(temperatureRead()) + "°C</span>";
   html += "<br><br>";
-  html += "<span class='info-label'>Uptime:</span>";
+  html += "<span class='info-label' data-pt='Uptime:' data-en='Uptime:'>Uptime:</span>";
   html += "<span class='info-value'>" + String(millis() / 1000) + "s</span>";
   html += "<br><br>";
-  html += "<span class='info-label'>Memória Livre:</span>";
+  html += "<span class='info-label' data-pt='Memória Livre:' data-en='Free Memory:'>Memória Livre:</span>";
   html += "<span class='info-value'>" + String(ESP.getFreeHeap() / 1024) + " KB</span>";
   html += "</div>";
   html += "</div>";
 
   // Informações Básicas
   html += "<div class='section'>";
-  html += "<h2>📻 Informações Básicas</h2>";
+  html += "<h2 data-pt='📻 Informações Básicas' data-en='📻 Basic Information'>📻 Informações Básicas</h2>";
   html += "<div class='field'>";
-  html += "<label for='callsign'>Indicativo (Callsign):</label>";
+  html += "<label for='callsign' data-pt='Indicativo (Callsign):' data-en='Callsign:'>Indicativo (Callsign):</label>";
   html += "<input type='text' id='callsign' name='callsign' value='" + String(config_callsign) + "' maxlength='30'>";
   html += "</div>";
   html += "<div class='field'>";
-  html += "<label for='frequency'>Frequência (MHz):</label>";
-  html += "<input type='text' id='frequency' name='frequency' value='" + String(config_frequency) + "' maxlength='10'>";
+  html += "<label for='frequency' data-pt='Frequência:' data-en='Frequency:'>Frequência:</label>";
+  html += "<div style='display: flex; gap: 10px;'>";
+  html += "<input type='text' id='frequency' name='frequency' value='" + String(config_frequency) + "' maxlength='10' style='flex: 1;'>";
+  html += "<select id='frequency_unit' name='frequency_unit' style='width: 100px;'>";
+  html += "<option value='0'" + String(config_frequency_unit == 0 ? " selected" : "") + " data-pt='MHz' data-en='MHz'>MHz</option>";
+  html += "<option value='1'" + String(config_frequency_unit == 1 ? " selected" : "") + " data-pt='GHz' data-en='GHz'>GHz</option>";
+  html += "</select>";
+  html += "</div>";
   html += "</div>";
   html += "</div>";
 
   // Configurações de Morse
   html += "<div class='section'>";
-  html += "<h2>🔊 Configurações de Morse (CW)</h2>";
+  html += "<h2 data-pt='🔊 Configurações de Morse (CW)' data-en='🔊 Morse Code (CW) Settings'>🔊 Configurações de Morse (CW)</h2>";
   html += "<div class='field'>";
-  html += "<label for='cw_message'>Mensagem Morse (ID):</label>";
+  html += "<label for='cw_message' data-pt='Mensagem Morse (ID):' data-en='Morse Message (ID):'>Mensagem Morse (ID):</label>";
   html += "<input type='text' id='cw_message' name='cw_message' value='" + String(config_cw_message) + "' maxlength='60'>";
   html += "</div>";
   html += "<div class='field'>";
-  html += "<label for='cw_wpm'>Velocidade Morse (WPM): <span id='cw_wpm_val' class='range-value'>" + String(config_cw_wpm) + "</span></label>";
+  html += "<label for='cw_wpm' data-pt='Velocidade Morse (WPM):' data-en='Morse Speed (WPM):'>Velocidade Morse (WPM): <span id='cw_wpm_val' class='range-value'>" + String(config_cw_wpm) + "</span></label>";
   html += "<input type='range' id='cw_wpm' name='cw_wpm' min='5' max='40' value='" + String(config_cw_wpm) + "' oninput='document.getElementById(\"cw_wpm_val\").textContent=this.value'>";
   html += "</div>";
   html += "<div class='field'>";
-  html += "<label for='cw_freq'>Frequência do Tom (Hz): <span id='cw_freq_val' class='range-value'>" + String(config_cw_freq) + "</span></label>";
+  html += "<label for='cw_freq' data-pt='Frequência do Tom (Hz):' data-en='Tone Frequency (Hz):'>Frequência do Tom (Hz): <span id='cw_freq_val' class='range-value'>" + String(config_cw_freq) + "</span></label>";
   html += "<input type='range' id='cw_freq' name='cw_freq' min='300' max='1200' value='" + String(config_cw_freq) + "' oninput='document.getElementById(\"cw_freq_val\").textContent=this.value'>";
   html += "</div>";
   html += "</div>";
 
   // Configurações de Tempos
   html += "<div class='section'>";
-  html += "<h2>⏱️ Configurações de Tempos</h2>";
+  html += "<h2 data-pt='⏱️ Configurações de Tempos' data-en='⏱️ Time Settings'>⏱️ Configurações de Tempos</h2>";
   html += "<div class='field'>";
-  html += "<label for='hang_time'>Hang Time (ms): <span id='hang_time_val' class='range-value'>" + String(config_hang_time) + "</span></label>";
+  html += "<label for='hang_time' data-pt='Hang Time (ms):' data-en='Hang Time (ms):'>Hang Time (ms): <span id='hang_time_val' class='range-value'>" + String(config_hang_time) + "</span></label>";
   html += "<input type='range' id='hang_time' name='hang_time' min='100' max='2000' value='" + String(config_hang_time) + "' oninput='document.getElementById(\"hang_time_val\").textContent=this.value'>";
   html += "</div>";
   html += "<div class='field'>";
-  html += "<label for='ptt_timeout'>PTT Timeout (ms): <span id='ptt_timeout_val' class='range-value'>" + String(config_ptt_timeout / 1000) + "s</span></label>";
+  html += "<label for='ptt_timeout' data-pt='PTT Timeout (ms):' data-en='PTT Timeout (ms):'>PTT Timeout (ms): <span id='ptt_timeout_val' class='range-value'>" + String(config_ptt_timeout / 1000) + "s</span></label>";
   html += "<input type='range' id='ptt_timeout' name='ptt_timeout' min='60000' max='600000' step='10000' value='" + String(config_ptt_timeout) + "' oninput='document.getElementById(\"ptt_timeout_val\").textContent=(this.value/1000)+\"s\"'>";
   html += "</div>";
   html += "<div class='field'>";
-  html += "<label for='voice_interval'>Intervalo ID Voz (min): <span id='voice_interval_val' class='range-value'>" + String(config_voice_interval / 60000) + "</span></label>";
+  html += "<label for='voice_interval' data-pt='Intervalo ID Voz (min):' data-en='Voice ID Interval (min):'>Intervalo ID Voz (min): <span id='voice_interval_val' class='range-value'>" + String(config_voice_interval / 60000) + "</span></label>";
   html += "<input type='range' id='voice_interval' name='voice_interval' min='5' max='30' value='" + String(config_voice_interval / 60000) + "' oninput='document.getElementById(\"voice_interval_val\").textContent=this.value'>";
   html += "</div>";
   html += "<div class='field'>";
-  html += "<label for='cw_interval'>Intervalo ID CW (min): <span id='cw_interval_val' class='range-value'>" + String(config_cw_interval / 60000) + "</span></label>";
+  html += "<label for='cw_interval' data-pt='Intervalo ID CW (min):' data-en='CW ID Interval (min):'>Intervalo ID CW (min): <span id='cw_interval_val' class='range-value'>" + String(config_cw_interval / 60000) + "</span></label>";
   html += "<input type='range' id='cw_interval' name='cw_interval' min='5' max='30' value='" + String(config_cw_interval / 60000) + "' oninput='document.getElementById(\"cw_interval_val\").textContent=this.value'>";
   html += "</div>";
   html += "<div class='field'>";
-  html += "<label for='ct_change'>Troca CT a cada (QSOs): <span id='ct_change_val' class='range-value'>" + String(config_ct_change) + "</span></label>";
+  html += "<label for='ct_change' data-pt='Troca CT a cada (QSOs):' data-en='Change CT every (QSOs):'>Troca CT a cada (QSOs): <span id='ct_change_val' class='range-value'>" + String(config_ct_change) + "</span></label>";
   html += "<input type='range' id='ct_change' name='ct_change' min='1' max='20' value='" + String(config_ct_change) + "' oninput='document.getElementById(\"ct_change_val\").textContent=this.value'>";
   html += "</div>";
   html += "</div>";
 
   // Configurações de Áudio
   html += "<div class='section'>";
-  html += "<h2>🎵 Configurações de Áudio</h2>";
+  html += "<h2 data-pt='♫ Configurações de Áudio' data-en='♫ Audio Settings'>♫ Configurações de Áudio</h2>";
   html += "<div class='field'>";
-  html += "<label for='volume'>Volume: <span id='volume_val' class='range-value'>" + String(config_volume * 100) + "%</span></label>";
+  html += "<label for='volume' data-pt='Volume:' data-en='Volume:'>Volume: <span id='volume_val' class='range-value'>" + String(config_volume * 100) + "%</span></label>";
   html += "<input type='range' id='volume' name='volume' min='0' max='100' value='" + String(config_volume * 100) + "' oninput='document.getElementById(\"volume_val\").textContent=this.value+\"%\"'>";
   html += "</div>";
   html += "<div class='field'>";
-  html += "<label for='sample_rate'>Sample Rate (Hz):</label>";
+  html += "<label for='sample_rate' data-pt='Sample Rate (Hz):' data-en='Sample Rate (Hz):'>Sample Rate (Hz):</label>";
   html += "<select id='sample_rate' name='sample_rate'>";
   html += "<option value='8000' " + String(config_sample_rate == 8000 ? "selected" : "") + ">8000 Hz</option>";
   html += "<option value='11025' " + String(config_sample_rate == 11025 ? "selected" : "") + ">11025 Hz</option>";
@@ -709,19 +723,7 @@ String generateConfigPage() {
   html += "</div>";
   html += "</div>";
 
-  // Configurações de Debug
-  html += "<div class='section'>";
-  html += "<h2>🐛 Configurações de Debug</h2>";
-  html += "<div class='field'>";
-  html += "<label for='debug_level'>Nível de Debug:</label>";
-  html += "<select id='debug_level' name='debug_level'>";
-  html += "<option value='0' " + String(config_debug_level == 0 ? "selected" : "") + ">0 - NONE (apenas erros)</option>";
-  html += "<option value='1' " + String(config_debug_level == 1 ? "selected" : "") + ">1 - MINIMAL (eventos principais)</option>";
-  html += "<option value='2' " + String(config_debug_level == 2 ? "selected" : "") + ">2 - NORMAL (debug padrão)</option>";
-  html += "<option value='3' " + String(config_debug_level == 3 ? "selected" : "") + ">3 - VERBOSE (detalhado)</option>";
-  html += "</select>";
-  html += "</div>";
-  html += "</div>";
+  // Configurações de Debug removidas - sempre usa VERBOSE (máximo)
 
   // Botões de ação
   html += "<div class='btn-group'>";
@@ -739,15 +741,18 @@ String generateConfigPage() {
 
   // Área de debug (oculta por padrão)
   html += "<div id='debug_area' class='section' style='display:none;'>";
-  html += "<h2>📋 Console de Debug</h2>";
-  html += "<textarea id='debug_console' rows='15' readonly style='font-family: monospace; font-size: 12px;'>";
-  html += "Console de debug em desenvolvimento...";
+  html += "<h2>📋 Console de Debug (Serial Monitor)</h2>";
+  html += "<p style='color: #aaa; font-size: 12px; margin-bottom: 10px;'>Últimas linhas do arquivo de log (atualiza a cada 2 segundos):</p>";
+  html += "<textarea id='debug_console' rows='20' readonly style='font-family: monospace; font-size: 11px; background: #000; color: #0f0; padding: 10px; border: 1px solid #333; border-radius: 5px; width: 100%; box-sizing: border-box;'>";
+  html += "Carregando logs...";
   html += "</textarea>";
+  html += "<p style='color: #888; font-size: 11px; margin-top: 5px;'>💡 Dica: Os logs são salvos em /debug.log no LittleFS. Use o Serial Monitor (115200 baud) para ver logs em tempo real.</p>";
   html += "</div>";
 
   // Footer
   html += "<div class='footer'>";
-  html += "Repetidora ESP32-2432S028R - Versão 2.3";
+  html += "<div data-pt='Repetidora ESP32-2432S028R - Versão 2.3' data-en='ESP32-2432S028R Repeater - Version 2.3'>Repetidora ESP32-2432S028R - Versão 2.3</div>";
+  html += "<div style='margin-top: 5px; font-size: 11px;' data-pt='Desenvolvido por: PU2PEG - Gabriel' data-en='Developed by: PU2PEG - Gabriel'>Desenvolvido por: PU2PEG - Gabriel</div>";
   html += "</div>";
 
   html += "</div>"; // container
@@ -755,58 +760,172 @@ String generateConfigPage() {
   // Script JavaScript
   html += "<script>";
   html += "function saveConfig() {";
-  html += "  if(confirm('Deseja salvar as configurações e reiniciar o dispositivo?')) {";
-  html += "    var data = new FormData();";
-  html += "    data.append('callsign', document.getElementById('callsign').value);";
-  html += "    data.append('frequency', document.getElementById('frequency').value);";
-  html += "    data.append('cw_message', document.getElementById('cw_message').value);";
-  html += "    data.append('cw_wpm', document.getElementById('cw_wpm').value);";
-  html += "    data.append('cw_freq', document.getElementById('cw_freq').value);";
-  html += "    data.append('hang_time', document.getElementById('hang_time').value);";
-  html += "    data.append('ptt_timeout', document.getElementById('ptt_timeout').value);";
-  html += "    data.append('voice_interval', document.getElementById('voice_interval').value);";
-  html += "    data.append('cw_interval', document.getElementById('cw_interval').value);";
-  html += "    data.append('ct_change', document.getElementById('ct_change').value);";
-  html += "    data.append('ct_index', document.getElementById('ct_index').value);";
-  html += "    data.append('volume', document.getElementById('volume').value);";
-  html += "    data.append('sample_rate', document.getElementById('sample_rate').value);";
-  html += "    data.append('debug_level', document.getElementById('debug_level').value);";
-  html += "    fetch('/save', { method: 'POST', body: data })";
-  html += "      .then(response => response.text())";
-  html += "      .then(data => { alert('Configurações salvas! O dispositivo será reiniciado...'); window.location.href = '/'; })";
-  html += "      .catch(error => { alert('Erro ao salvar: ' + error); console.error('Erro:', error); });";
-  html += "  }";
+  html += "  try {";
+  html += "    if(confirm('Deseja salvar as configurações e reiniciar o dispositivo?')) {";
+  html += "      var data = new FormData();";
+  html += "      data.append('callsign', document.getElementById('callsign').value);";
+  html += "      data.append('frequency', document.getElementById('frequency').value);";
+  html += "      data.append('frequency_unit', document.getElementById('frequency_unit').value);";
+  html += "      data.append('cw_message', document.getElementById('cw_message').value);";
+  html += "      data.append('cw_wpm', document.getElementById('cw_wpm').value);";
+  html += "      data.append('cw_freq', document.getElementById('cw_freq').value);";
+  html += "      data.append('hang_time', document.getElementById('hang_time').value);";
+  html += "      data.append('ptt_timeout', document.getElementById('ptt_timeout').value);";
+  html += "      data.append('voice_interval', document.getElementById('voice_interval').value);";
+  html += "      data.append('cw_interval', document.getElementById('cw_interval').value);";
+  html += "      data.append('ct_change', document.getElementById('ct_change').value);";
+  html += "      data.append('ct_index', document.getElementById('ct_index').value);";
+  html += "      data.append('volume', document.getElementById('volume').value);";
+  html += "      data.append('sample_rate', document.getElementById('sample_rate').value);";
+  html += "      fetch('/save', { method: 'POST', body: data })";
+  html += "        .then(response => { if(!response.ok) throw new Error('HTTP ' + response.status); return response.text(); })";
+  html += "        .then(data => { alert('Configurações salvas! O dispositivo será reiniciado...'); setTimeout(() => window.location.href = '/', 1000); })";
+  html += "        .catch(error => { alert('Erro ao salvar: ' + error.message); console.error('Erro:', error); });";
+  html += "    }";
+  html += "  } catch(e) { alert('Erro: ' + e.message); console.error(e); }";
   html += "}";
   html += "function restartDevice() {";
-  html += "  if(confirm('Tem certeza que deseja reiniciar o dispositivo?')) {";
-  html += "    fetch('/restart', { method: 'POST' })";
-  html += "      .then(response => response.text())";
-  html += "      .then(data => { alert(data); setTimeout(() => location.reload(), 3000); })";
-  html += "      .catch(error => alert('Erro ao reiniciar: ' + error));";
-  html += "  }";
+  html += "  try {";
+  html += "    if(confirm('Tem certeza que deseja reiniciar o dispositivo?')) {";
+  html += "      fetch('/restart', { method: 'POST' })";
+  html += "        .then(response => { if(!response.ok) throw new Error('HTTP ' + response.status); return response.text(); })";
+  html += "        .then(data => { alert(data); setTimeout(() => location.reload(), 3000); })";
+  html += "        .catch(error => { alert('Erro ao reiniciar: ' + error.message); console.error(error); });";
+  html += "    }";
+  html += "  } catch(e) { alert('Erro: ' + e.message); console.error(e); }";
   html += "}";
   html += "function resetFactory() {";
-  html += "  if(confirm('ATENÇÃO: Isso apagará TODAS as configurações e restaurará os valores de fábrica.\\n\\nTem certeza que deseja continuar?')) {";
-  html += "    fetch('/reset_factory', { method: 'POST' })";
-  html += "      .then(response => response.text())";
-  html += "      .then(data => { alert(data); setTimeout(() => location.reload(), 3000); })";
-  html += "      .catch(error => alert('Erro ao fazer reset: ' + error));";
-  html += "  }";
+  html += "  try {";
+  html += "    if(confirm('ATENÇÃO: Isso apagará TODAS as configurações e restaurará os valores de fábrica.\\n\\nTem certeza que deseja continuar?')) {";
+  html += "      fetch('/reset_factory', { method: 'POST' })";
+  html += "        .then(response => { if(!response.ok) throw new Error('HTTP ' + response.status); return response.text(); })";
+  html += "        .then(data => { alert(data); setTimeout(() => location.reload(), 3000); })";
+  html += "        .catch(error => { alert('Erro ao fazer reset: ' + error.message); console.error(error); });";
+  html += "    }";
+  html += "  } catch(e) { alert('Erro: ' + e.message); console.error(e); }";
   html += "}";
   html += "function toggleDebug() {";
-  html += "  var debug = document.getElementById('debug_area');";
-  html += "  debug.style.display = debug.style.display === 'none' ? 'block' : 'none';";
-  html += "  if(debug.style.display === 'block') { fetchDebug(); }";
+  html += "  try {";
+  html += "    var debug = document.getElementById('debug_area');";
+  html += "    if(!debug) { alert('Erro: Elemento debug_area não encontrado'); return; }";
+  html += "    debug.style.display = debug.style.display === 'none' ? 'block' : 'none';";
+  html += "    if(debug.style.display === 'block') { fetchDebug(); }";
+  html += "  } catch(e) { alert('Erro: ' + e.message); console.error(e); }";
   html += "}";
   html += "function fetchDebug() {";
-  html += "  fetch('/debug')";
-  html += "    .then(response => response.text())";
-  html += "    .then(data => { document.getElementById('debug_console').value = data; })";
-  html += "    .catch(error => console.error('Erro ao carregar debug:', error));";
-  html += "  if(document.getElementById('debug_area').style.display === 'block') {";
-  html += "    setTimeout(fetchDebug, 2000);";
-  html += "  }";
+  html += "  try {";
+  html += "    fetch('/debug')";
+  html += "      .then(response => { if(!response.ok) throw new Error('HTTP ' + response.status); return response.text(); })";
+  html += "      .then(data => {";
+  html += "        var console = document.getElementById('debug_console');";
+  html += "        if(!console) { console.error('Elemento debug_console não encontrado'); return; }";
+  html += "        if(data && data.trim().length > 0) {";
+  html += "          var lines = data.split('\\n');";
+  html += "          var lastLines = lines.slice(-50).join('\\n');";
+  html += "          console.value = lastLines;";
+  html += "          console.scrollTop = console.scrollHeight;";
+  html += "        } else {";
+  html += "          console.value = 'Nenhum log disponível ainda.\\n\\nOs logs aparecerão aqui quando houver atividade.\\nUse o Serial Monitor (115200 baud) para ver logs em tempo real.';";
+  html += "        }";
+  html += "      })";
+  html += "      .catch(error => {";
+  html += "        var console = document.getElementById('debug_console');";
+  html += "        if(console) console.value = 'Erro ao carregar logs: ' + error.message;";
+  html += "        console.error('Erro ao carregar debug:', error);";
+  html += "      });";
+  html += "    var debug = document.getElementById('debug_area');";
+  html += "    if(debug && debug.style.display === 'block') {";
+  html += "      setTimeout(fetchDebug, 2000);";
+  html += "    }";
+  html += "  } catch(e) { console.error('Erro em fetchDebug:', e); }";
   html += "}";
+  html += "var currentLang = 'pt';";
+  html += "var translations = {";
+  html += "  pt: {";
+  html += "    'title': '📡 Configuração da Repetidora',";
+  html += "    'status': '⚙️ Status do Sistema',";
+  html += "    'temp': 'Temperatura:',";
+  html += "    'uptime': 'Uptime:',";
+  html += "    'mem': 'Memória Livre:',";
+  html += "    'basic': '📻 Informações Básicas',";
+  html += "    'callsign': 'Indicativo (Callsign):',";
+  html += "    'frequency': 'Frequência:',";
+  html += "    'morse': '🔊 Configurações de Morse (CW)',";
+  html += "    'cw_msg': 'Mensagem Morse (ID):',";
+  html += "    'cw_wpm': 'Velocidade Morse (WPM):',";
+  html += "    'cw_freq': 'Frequência do Tom (Hz):',";
+  html += "    'times': '⏱️ Configurações de Tempos',";
+  html += "    'hang': 'Hang Time (ms):',";
+  html += "    'ptt': 'PTT Timeout (ms):',";
+  html += "    'voice_int': 'Intervalo ID Voz (min):',";
+  html += "    'cw_int': 'Intervalo ID CW (min):',";
+  html += "    'audio': '♫ Configurações de Áudio',";
+  html += "    'volume': 'Volume:',";
+  html += "    'sample': 'Sample Rate (Hz):',";
+  html += "    'ct': '▲ Courtesy Tone (CT)',";
+  html += "    'ct_select': 'Selecione o Courtesy Tone:',";
+  html += "    'save': '💾 Salvar e Reiniciar',";
+  html += "    'restart': '🔄 Reiniciar Dispositivo',";
+  html += "    'debug': '📋 Ver Console Debug',";
+  html += "    'factory': '⚠️ Reset de Fábrica',";
+  html += "    'footer': 'Repetidora ESP32-2432S028R - Versão 2.3',";
+  html += "    'author': 'Desenvolvido por: PU2PEG - Gabriel'";
+  html += "  },";
+  html += "  en: {";
+  html += "    'title': '📡 Repeater Configuration',";
+  html += "    'status': '⚙️ System Status',";
+  html += "    'temp': 'Temperature:',";
+  html += "    'uptime': 'Uptime:',";
+  html += "    'mem': 'Free Memory:',";
+  html += "    'basic': '📻 Basic Information',";
+  html += "    'callsign': 'Callsign:',";
+  html += "    'frequency': 'Frequency:',";
+  html += "    'morse': '🔊 Morse Code (CW) Settings',";
+  html += "    'cw_msg': 'Morse Message (ID):',";
+  html += "    'cw_wpm': 'Morse Speed (WPM):',";
+  html += "    'cw_freq': 'Tone Frequency (Hz):',";
+  html += "    'times': '⏱️ Time Settings',";
+  html += "    'hang': 'Hang Time (ms):',";
+  html += "    'ptt': 'PTT Timeout (ms):',";
+  html += "    'voice_int': 'Voice ID Interval (min):',";
+  html += "    'cw_int': 'CW ID Interval (min):',";
+  html += "    'audio': '♫ Audio Settings',";
+  html += "    'volume': 'Volume:',";
+  html += "    'sample': 'Sample Rate (Hz):',";
+  html += "    'ct': '▲ Courtesy Tone (CT)',";
+  html += "    'ct_select': 'Select Courtesy Tone:',";
+  html += "    'save': '💾 Save and Restart',";
+  html += "    'restart': '🔄 Restart Device',";
+  html += "    'debug': '📋 View Debug Console',";
+  html += "    'factory': '⚠️ Factory Reset',";
+  html += "    'footer': 'ESP32-2432S028R Repeater - Version 2.3',";
+  html += "    'author': 'Developed by: PU2PEG - Gabriel'";
+  html += "  }";
+  html += "};";
+  html += "function applyTranslations(lang) {";
+  html += "  currentLang = lang;";
+  html += "  var t = translations[lang];";
+  html += "  document.querySelector('h1').textContent = t.title;";
+  html += "  document.getElementById('langBtn').textContent = lang === 'pt' ? '🌐 EN' : '🌐 PT';";
+  html += "  var elements = document.querySelectorAll('[data-pt]');";
+  html += "  elements.forEach(function(el) {";
+  html += "    var attr = lang === 'pt' ? 'data-pt' : 'data-en';";
+  html += "    if(el.hasAttribute(attr)) {";
+  html += "      if(el.tagName === 'LABEL' || el.tagName === 'H2' || el.tagName === 'DIV') {";
+  html += "        el.textContent = el.getAttribute(attr);";
+  html += "      } else if(el.tagName === 'OPTION') {";
+  html += "        el.textContent = el.getAttribute(attr);";
+  html += "      }";
+  html += "    }";
+  html += "  });";
+  html += "}";
+  html += "function toggleLanguage() {";
+  html += "  currentLang = currentLang === 'pt' ? 'en' : 'pt';";
+  html += "  applyTranslations(currentLang);";
+  html += "}";
+  html += "document.addEventListener('DOMContentLoaded', function() {";
+  html += "  applyTranslations('pt');";
+  html += "});";
   html += "</script>";
 
   html += "</body>";
@@ -849,6 +968,7 @@ void initWebServer() {
 
   // Rota principal - página de configuração
   server.on("/", HTTP_GET, []() {
+    Serial.println("[WEB] GET / - Gerando página de configuração");
     server.send(200, "text/html", generateConfigPage());
   });
 
@@ -873,6 +993,13 @@ void initWebServer() {
       Serial.printf("Frequência: %s\n", config_frequency);
     } else {
       Serial.println("AVISO: Campo 'frequency' não recebido!");
+    }
+
+    if (server.hasArg("frequency_unit")) {
+      config_frequency_unit = server.arg("frequency_unit").toInt();
+      Serial.printf("Unidade de Frequência: %s\n", config_frequency_unit == 0 ? "MHz" : "GHz");
+    } else {
+      Serial.println("AVISO: Campo 'frequency_unit' não recebido!");
     }
 
     if (server.hasArg("cw_message")) {
@@ -954,13 +1081,10 @@ void initWebServer() {
       Serial.println("AVISO: Campo 'sample_rate' não recebido!");
     }
 
-    if (server.hasArg("debug_level")) {
-      config_debug_level = server.arg("debug_level").toInt();
-      DEBUG_LEVEL = config_debug_level;
-      Serial.printf("Debug Level: %d\n", config_debug_level);
-    } else {
-      Serial.println("AVISO: Campo 'debug_level' não recebido!");
-    }
+    // debug_level removido - sempre usa VERBOSE (nível máximo)
+    config_debug_level = 3;
+    DEBUG_LEVEL = 3;
+    Serial.println("[CONFIG] Debug Level: 3 (VERBOSE - sempre máximo)");
 
     Serial.println("[CONFIG] === SALVANDO PREFERENCES ===");
     Serial.printf("[CONFIG] Voice Interval: %d min, CW Interval: %d min\n", 
@@ -989,7 +1113,7 @@ void initWebServer() {
 
   // Rota para reiniciar o dispositivo
   server.on("/restart", HTTP_POST, []() {
-    Serial.println("Recebida requisição de reinício...");
+    Serial.println("[WEB] POST /restart - Recebida requisição de reinício");
     savePreferences(); // Salva antes de reiniciar
     server.send(200, "text/html", getSuccessPage("Dispositivo será reiniciado em 3 segundos..."));
     delay(3000);
@@ -998,7 +1122,7 @@ void initWebServer() {
 
   // Rota para reset de fábrica
   server.on("/reset_factory", HTTP_POST, []() {
-    Serial.println("=== RESET DE FÁBRICA ===");
+    Serial.println("[WEB] POST /reset_factory - === RESET DE FÁBRICA ===");
     preferences.begin("config", false);
     preferences.clear(); // Apaga todas as configurações
     preferences.end();
@@ -1012,13 +1136,27 @@ void initWebServer() {
     if (LittleFS.exists("/debug.log")) {
       File file = LittleFS.open("/debug.log", FILE_READ);
       if (file) {
-        String content = file.readString();
+        // Lê o arquivo completo
+        size_t fileSize = file.size();
+        String content;
+        
+        // Se o arquivo for muito grande (> 50KB), lê apenas as últimas linhas
+        if (fileSize > 50000) {
+          // Move para as últimas 30KB do arquivo
+          file.seek(fileSize - 30000);
+          // Lê o resto
+          content = file.readString();
+          content = "... (arquivo truncado, mostrando últimas linhas) ...\n" + content;
+        } else {
+          content = file.readString();
+        }
+        
         file.close();
         server.send(200, "text/plain", content);
         return;
       }
     }
-    server.send(200, "text/plain", "Nenhum log de debug disponível.");
+    server.send(200, "text/plain", "Nenhum log de debug disponível ainda.\n\nOs logs aparecerão aqui quando houver atividade.\nUse o Serial Monitor (115200 baud) para ver logs em tempo real.");
   });
 
   // Inicia o servidor
@@ -2104,26 +2242,20 @@ void updateDisplay() {
       uptime_label_drawn = true;
     }
 
-    // Coluna 3: CT Index (direita) - SEMPRE mostra quando não está em modo WiFi
-    if (!show_ip_screen) {
-      // Usando largura segura do texto (~45px para "XX/33")
-      int16_t ct_text_w = tft.textWidth("00/33");
-      
-      // Label "CT:"
-      tft.setTextColor(TFT_CYAN, TFT_BLACK);
-      tft.setTextSize(1);
-      tft.setCursor(W - ct_text_w - 5, footer_y + 5);
-      tft.print("CT:");
-      
-      // Valor do CT (número)
-      tft.setTextSize(2);
-      tft.setCursor(W - ct_text_w - 5, footer_y + 15);
-      tft.printf("%02d/33", ct_index + 1);
-    } else {
-      // Em modo WiFi, limpa a área do CT no rodapé
-      int16_t ct_text_w = tft.textWidth("00/33");
-      tft.fillRect(W - ct_text_w - 5, footer_y, ct_text_w + 10, footer_h, TFT_BLACK);
-    }
+    // Coluna 3: CT Index (direita) - SEMPRE mostra (tanto em modo normal quanto WiFi)
+    // Usando largura segura do texto (~45px para "XX/33")
+    int16_t ct_text_w = tft.textWidth("00/33");
+    
+    // Label "CT:"
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.setTextSize(1);
+    tft.setCursor(W - ct_text_w - 5, footer_y + 5);
+    tft.print("CT:");
+    
+    // Valor do CT (número)
+    tft.setTextSize(2);
+    tft.setCursor(W - ct_text_w - 5, footer_y + 15);
+    tft.printf("%02d/33", ct_index + 1);
   
     // Linha separadora no rodapé
     tft.drawFastHLine(5, footer_y - 2, W - 10, TFT_DARKGREY);
