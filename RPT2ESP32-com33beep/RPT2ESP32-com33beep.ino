@@ -157,6 +157,10 @@ char old_uptime_str[16] = "";  // String do uptime anterior (para comparar e só
 enum TxMode { TX_NONE, TX_RX, TX_VOICE, TX_CW };
 TxMode tx_mode = TX_NONE;  // Tipo de transmissão ativa
 
+// Texto atual sendo transmitido em Morse (para exibição no display)
+char current_morse_char[64] = "";  // Armazena o código Morse atual
+char current_morse_display[2] = "";  // Caractere atual sendo transmitido
+
 // Timers para Identificação Automática (ID Voice/CW)
 unsigned long last_voice = 0;      // Última identificação em voz
 unsigned long last_cw    = 0;      // Última identificação em CW (Morse)
@@ -529,6 +533,11 @@ void playCW(const String &txt) {
     }
 
     if (found && code) {
+      // Atualiza display com o caractere atual e código Morse
+      snprintf(current_morse_display, sizeof(current_morse_display), "%c", c);
+      snprintf(current_morse_char, sizeof(current_morse_char), "%s", code);
+      updateDisplay();  // Atualiza para mostrar código Morse atual
+
       // Para cada ponto ou traço no código Morse
       for (size_t j = 0; code[j] != '\0'; j++) {
         // Determina duração: 3 * dot para traço, 1 * dot para ponto
@@ -541,6 +550,10 @@ void playCW(const String &txt) {
         delay(dotDuration);
       }
 
+      // Limpa o display do código Morse após completar caractere
+      current_morse_char[0] = '\0';
+      updateDisplay();
+
       // Delay entre caracteres (3 pontos)
       delay(3 * dotDuration);
     } else if (c == ' ') {
@@ -551,6 +564,10 @@ void playCW(const String &txt) {
 
   // Delay final
   delay(50);
+
+  // Limpa variáveis de exibição Morse
+  current_morse_char[0] = '\0';
+  current_morse_display[0] = '\0';
 
   // Limpeza: para I2S após reprodução
   i2s_driver_uninstall(I2S_NUM_0);
@@ -873,19 +890,34 @@ void updateDisplay() {
     // ========== STATUS PRINCIPAL (Centro, caixa grande) ==========
     uint16_t status_bg, status_text_color;
     const char* status_text;
+    const char* status_subtext = "";
     
-    if (ptt_state) {
+    // Determina estado e texto baseado no modo de transmissão
+    if (tx_mode == TX_VOICE) {
+      status_bg = TFT_RED;
+      status_text_color = TFT_WHITE;
+      status_text = "TX VOZ";
+      status_subtext = "INDICATIVO VOZ";
+    } else if (tx_mode == TX_CW) {
+      status_bg = TFT_RED;
+      status_text_color = TFT_WHITE;
+      status_text = "TX CW";
+      status_subtext = "MORSE CODE";
+    } else if (tx_mode == TX_RX || (ptt_state && tx_mode == TX_NONE)) {
       status_bg = TFT_RED;
       status_text_color = TFT_WHITE;
       status_text = "TX ATIVO";
+      status_subtext = "REPETINDO";
     } else if (cor_stable) {
       status_bg = TFT_YELLOW;
       status_text_color = TFT_BLACK;
       status_text = "RX ATIVO";
+      status_subtext = "";
     } else {
       status_bg = TFT_DARKGREEN;
       status_text_color = TFT_WHITE;
       status_text = "EM ESCUTA";
+      status_subtext = "";
     }
     
     // Caixa de status com bordas arredondadas (ajustado para header de 60px)
@@ -908,16 +940,31 @@ void updateDisplay() {
     tft.setCursor((W - status_text_w) / 2, status_text_y);
     tft.print(status_text);
     
-    // Se TX, mostra contador de QSO atual
-    if (ptt_state) {
+    // Subtexto (para modo CW/Voz ou QSO)
+    if (status_subtext[0] != '\0') {
+      tft.setTextSize(2);
+      tft.setTextColor(status_text_color, status_bg);
+      int16_t subtext_w = tft.textWidth(status_subtext);
+      tft.setCursor((W - subtext_w) / 2, status_y + 60);
+      tft.print(status_subtext);
+
+      // Se está em modo CW e há código Morse sendo transmitido, mostra abaixo
+      if (tx_mode == TX_CW && current_morse_char[0] != '\0') {
+        tft.setTextColor(TFT_YELLOW, status_bg);
+        int16_t morse_w = tft.textWidth(current_morse_char);
+        tft.setCursor((W - morse_w) / 2, status_y + 35);  // Entre texto principal e subtexto
+        tft.printf("%c: %s", current_morse_display[0], current_morse_char);
+      }
+    } else if (ptt_state && tx_mode == TX_NONE) {
+      // Modo RX normal - mostra QSO ATUAL
       tft.setTextSize(2);
       tft.setTextColor(TFT_WHITE, status_bg);
       int16_t qso_w = tft.textWidth("QSO ATUAL");
       tft.setCursor((W - qso_w) / 2, status_y + 60);
       tft.print("QSO ATUAL");
     } else {
-      // Limpa área "QSO ATUAL" se não está em TX (evita texto fantasma)
-      tft.fillRect(W/2 - 50, status_y + 55, 100, 25, status_bg);
+      // Limpa área de subtexto se não está em TX (evita texto fantasma)
+      tft.fillRect(10, status_y + 55, W - 20, 25, status_bg);
     }
   
     // ========== COURTESY TONE (Abaixo do status) ==========
@@ -992,13 +1039,15 @@ void updateDisplay() {
       uptime_label_drawn = true;
     }
 
-    // Coluna 3: CT Index (direita)
+    // Coluna 3: CT Index (direita) - Ajustado para não sair da tela
+    // Usando largura segura do texto (~45px para "XX/33")
+    int16_t ct_text_w = tft.textWidth("00/33");
     tft.setTextColor(TFT_CYAN, TFT_BLACK);
     tft.setTextSize(1);
-    tft.setCursor(W - 50, footer_y + 5);
+    tft.setCursor(W - ct_text_w - 5, footer_y + 5);
     tft.print("CT:");
     tft.setTextSize(2);
-    tft.setCursor(W - 50, footer_y + 15);
+    tft.setCursor(W - ct_text_w - 5, footer_y + 15);
     tft.printf("%02d/33", ct_index + 1);
   
     // Linha separadora no rodapé
@@ -1411,11 +1460,15 @@ void loop() {
   if (millis() - last_voice >= VOICE_INTERVAL_MS && !playing && !ptt_state) {
     last_voice = millis();
     Serial.println("=== IDENTIFICAÇÃO EM VOZ (10 min) ===");
+    tx_mode = TX_VOICE;  // Define modo de transmissão
+    updateDisplay();  // Atualiza display para mostrar TX VOZ
     digitalWrite(PIN_PTT, HIGH);  // PTT ON
     delay(100);
     playVoiceFile("/id_voz_8k16.wav");  // Toca indicativo de voz
     delay(100);
     digitalWrite(PIN_PTT, LOW);   // PTT OFF
+    tx_mode = TX_NONE;  // Reseta modo de transmissão
+    updateDisplay();  // Volta para estado normal
     Serial.println("Identificação de voz concluída");
   }
 
@@ -1423,11 +1476,15 @@ void loop() {
   if (millis() - last_cw >= CW_INTERVAL_MS && !playing && !ptt_state) {
     last_cw = millis();
     Serial.println("=== IDENTIFICAÇÃO EM CW (30 min) ===");
+    tx_mode = TX_CW;  // Define modo de transmissão
+    updateDisplay();  // Atualiza display para mostrar TX CW
     digitalWrite(PIN_PTT, HIGH);  // PTT ON
     delay(100);
     playCW(CALLSIGN);  // Toca callsign em Morse
     delay(100);
     digitalWrite(PIN_PTT, LOW);   // PTT OFF
+    tx_mode = TX_NONE;  // Reseta modo de transmissão
+    updateDisplay();  // Volta para estado normal
     Serial.println("Identificação CW concluída");
   }
 }

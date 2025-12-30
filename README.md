@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![ESP32-2432S028](https://img.shields.io/badge/ESP32-2432S028-CYD-blue)
+![ESP32](https://img.shields.io/badge/ESP32-CYD-blue)
 ![Arduino](https://img.shields.io/badge/Arduino-IDE-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/Status-Stable-brightgreen)
