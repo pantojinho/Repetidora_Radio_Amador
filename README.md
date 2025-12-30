@@ -185,26 +185,45 @@ Repetidora_Radio_Amador/
 - **Canais**: Mono (1 canal)
 - **Formato**: WAV não-comprimido (PCM)
 
-### 6. Upload dos Arquivos de Áudio para o ESP32
-1. **Feche o Monitor Serial** (obrigatório - o upload sempre falha se estiver aberto)
+### 6. ⚠️ IMPORTANTE: Ordem de Upload
+
+**⚠️ ATENÇÃO: É CRÍTICO seguir esta ordem!**
+
+1. **PRIMEIRO: Compile e faça upload do código** (sem o áudio ainda)
+2. **DEPOIS: Faça upload dos arquivos de áudio**
+
+**Por quê?**
+- O código precisa ser compilado primeiro para criar a estrutura do LittleFS no ESP32
+- Se você tentar fazer upload do áudio antes de compilar, pode ocorrer erro
+- Após compilar e fazer upload do código uma vez, o sistema LittleFS estará pronto para receber os arquivos
+
+### 7. Upload do Código Principal (PRIMEIRO)
+
+1. Selecione a placa: `ESP32 Dev Module` ou `ESP32-2432S028`
 2. Conecte o ESP32 via USB
-3. No Arduino IDE 2.x, abra o projeto (`RPT2ESP32-com33beep.ino`)
+3. **Compile o código** (`Sketch > Verify/Compile`) - verifique se não há erros
+4. **Carregue o código** (`Sketch > Upload`)
+5. Aguarde o upload completar e o ESP32 reiniciar
+
+> ✅ **Agora o código está no ESP32 e o sistema LittleFS está inicializado**
+
+### 8. Upload dos Arquivos de Áudio para o ESP32 (DEPOIS)
+
+1. **Feche o Monitor Serial** (obrigatório - o upload sempre falha se estiver aberto)
+2. Mantenha o ESP32 conectado via USB
+3. No Arduino IDE 2.x, com o projeto aberto (`RPT2ESP32-com33beep.ino`)
 4. Pressione **Ctrl + Shift + P** para abrir a Paleta de Comandos
 5. Digite: `Upload LittleFS` ou `Upload SPIFFS`
 6. Selecione o comando na lista
 7. Aguarde o upload completar (você verá "Data uploaded successfully" no console)
-8. O arquivo `id_voz_8k16.wav` será gravado na memória SPIFFS do ESP32
+8. O arquivo `id_voz_8k16.wav` será gravado na memória LittleFS do ESP32
 
 **Nota**: Se você receber um erro "SPIFFS image not found" ou o comando não aparecer:
 - Certifique-se de que a pasta `/data` está no mesmo nível do arquivo `.ino`
 - Verifique se você instalou o plugin corretamente (veja seção 4)
 - Se instalou manualmente, verifique se o arquivo `.vsix` está diretamente em `plugins`, não em uma subpasta
 - Reinicie o Arduino IDE 2.x após instalar o plugin
-
-### 7. Upload do Código Principal
-1. Selecione a placa: `ESP32 Dev Module` ou `ESP32-2432S028`
-2. Conecte o ESP32 via USB
-3. Carregue o código (`Sketch > Upload`)
+- **Certifique-se de ter compilado e feito upload do código primeiro!**
 
 ### 8. Configurar TFT_eSPI
 O arquivo `User_Setup.h` da biblioteca TFT_eSPI deve ser configurado assim:
@@ -230,12 +249,25 @@ O arquivo `User_Setup.h` da biblioteca TFT_eSPI deve ser configurado assim:
 
 > **Localização**: `Arduino/libraries/TFT_eSPI/User_Setup.h`
 
-### 5. Carregar o código
-1. Clone este repositório ou baixe o ZIP
-2. Abra o arquivo `RPT2ESP32-com33beep.ino` no Arduino IDE
-3. Selecione a placa: `ESP32 Dev Module` ou `ESP32-2432S028`
-4. Conecte o ESP32 via USB
-5. Carregue o código (`Sketch > Upload`)
+### 10. Verificar Funcionamento
+
+Após fazer upload do código e dos arquivos de áudio:
+
+1. Abra o **Serial Monitor** (115200 baud)
+2. Você deve ver mensagens do sistema:
+   ```
+   === INICIALIZACAO REPETIDORA ===
+   LittleFS inicializado com sucesso
+   Display: W=320, H=240
+   TEXTO 'EM ESCUTA' DESENHADO: x=79, y=100, w=162, bg=0x07E0
+   === INICIALIZACAO CONCLUIDA ===
+   ```
+3. O display deve mostrar:
+   - Header azul com o callsign
+   - Status "EM ESCUTA" em verde
+   - Courtesy tone selecionado
+   - Estatísticas (QSOs, Uptime, CT)
+4. O LED RGB deve estar verde (modo idle)
 
 ---
 
@@ -321,14 +353,24 @@ Speaker 8Ω      ──────────────────── JS
 
 ## 🎙 Sistema de Identificação Automática
 
+### ⚠️ Ordem Correta de Upload
+
+**IMPORTANTE: Sempre siga esta ordem:**
+
+1. **PRIMEIRO**: Compile e faça upload do código (`Sketch > Upload`)
+2. **DEPOIS**: Faça upload dos arquivos de áudio (`Upload LittleFS`)
+
+Esta ordem é crítica porque o código precisa inicializar o sistema LittleFS antes de receber arquivos. Se você tentar fazer upload do áudio antes de compilar, pode ocorrer erro "SPIFFS image not found".
+
 ### Como fazer Upload dos Arquivos de Áudio
 
-📋 **Guia Completo de Upload**: [`DOCUMENTACAO_ESP32-2432S028_ADD.md`](RPT2ESP32-com33beep/DOCUMENTACAO_ESP32-2432S028_ADD.md)
+📋 **Guia Completo de Upload**: Veja seção [6. ⚠️ IMPORTANTE: Ordem de Upload](#6-️-importante-ordem-de-upload) acima
 
 Este guia detalhado inclui:
 - ✅ Instalação do plugin "ESP32 Sketch Data Upload"
 - ✅ Formato correto dos arquivos WAV (8kHz, 16-bit, mono)
 - ✅ Como converter áudio se necessário (FFmpeg ou Audacity)
+- ✅ **Ordem correta: Compilar código primeiro, depois upload de áudio**
 - ✅ Como fazer upload dos arquivos
 - ✅ Como verificar funcionamento via Serial Monitor
 

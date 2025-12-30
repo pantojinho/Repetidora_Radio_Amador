@@ -514,23 +514,21 @@ void playVoiceFile(const char* filename) {
     return;
   }
 
-  logToFile("H1", "playVoiceFile:opened", millis(), file.size(), 0, 0);
+  // Lê header WAV (44 bytes) e extrai taxa de amostragem (igual ao código original)
+  uint8_t header[44];
+  if (file.read(header, 44) != 44) {
+    file.close();
+    Serial.println("ERRO: Não foi possível ler header WAV");
+    return;
+  }
   
-  // Tamanho do header WAV (44 bytes) - pula direto para os dados PCM
-  const int WAV_HEADER_SIZE = 44;
-  size_t audioDataSize = file.size() - WAV_HEADER_SIZE;  // Tamanho real dos dados de áudio
-  float estimatedDuration = (float)audioDataSize / (2 * 8000);  // 16-bit = 2 bytes, 8000 Hz sample rate
+  // Extrai sample rate do header (bytes 24-27, little-endian) - igual ao código original
+  uint32_t rate = header[24] | (header[25]<<8) | (header[26]<<16) | (header[27]<<24);
+  Serial.printf("Tocando arquivo: %s (sample rate: %d Hz)\n", filename, rate);
   
-  Serial.printf("Tocando arquivo de voz: %s\n", filename);
-  Serial.printf("Tamanho total: %d bytes, Dados de áudio: %d bytes\n", file.size(), audioDataSize);
-  Serial.printf("Duração estimada: %.2f segundos\n", estimatedDuration);
-
-  // Configura I2S para 8000 Hz (taxa do arquivo de voz)
-  i2s_init(8000);
-  logToFile("H1", "playVoiceFile:i2s_init", millis(), 8000, 0, 0);
+  // Inicializa I2S com a taxa do arquivo (igual ao código original)
+  i2s_init(rate);
   playing = true;
-
-  file.seek(WAV_HEADER_SIZE);
 
   // Alocação dinâmica para evitar Stack Overflow (Heap em vez de Stack)
   const size_t bufferSize = 512;
@@ -553,62 +551,51 @@ void playVoiceFile(const char* filename) {
   unsigned long totalBytesRead = 0;
   unsigned long startTime = millis();
 
-  // Lê e reproduz o arquivo em chunks
-  size_t bytesRead;
-  while ((bytesRead = file.read((uint8_t*)audioBuffer, bufferSize * 2)) > 0) {
-    // Converte mono para estéreo duplicando cada amostra
-    for (size_t i = 0; i < bytesRead / 2; i++) {
-      // Converte de unsigned (0-65535) para signed (-32768 a 32767)
-      int16_t sample = (int16_t)((uint16_t)audioBuffer[i] - 32768);
-      // Aplica volume
-      sample = (int16_t)(sample * VOLUME);
-      // Formata para I2S (16-bit, duplica para estéreo)
-      uint16_t sample16 = (uint16_t)(sample + 32768);
-      i2sBuffer[i * 2] = sample16;
-      i2sBuffer[i * 2 + 1] = sample16;
+  // Lê e reproduz o arquivo (igual ao código original)
+  size_t contador = 0;
+  while (file.available() && playing) {
+    size_t r = file.read((uint8_t*)audioBuffer, min((size_t)file.available(), bufferSize * 2));
+    size_t samples = r/2;
+    
+    // Aplica volume (igual ao código original)
+    for (size_t i = 0; i < samples; i++) {
+      audioBuffer[i] = (int16_t)constrain((int32_t)audioBuffer[i] * VOLUME, -16000, 16000);
     }
 
-    // Escreve via I2S
-    size_t bytesWritten;
-    i2s_write(I2S_NUM_0, i2sBuffer, bytesRead * 2, &bytesWritten, portMAX_DELAY);
+    // Converte para formato I2S (igual ao código original)
+    size_t w;
+    uint16_t out[bufferSize*2];
+    for (size_t i = 0; i < samples; i++) {
+      uint16_t v = ((audioBuffer[i] + 32768) >> 8) << 8;
+      out[i*2] = v;
+      out[i*2+1] = v;
+    }
+    
+    // Escreve via I2S com portMAX_DELAY (igual ao código original - bloqueia até escrever tudo)
+    i2s_write(I2S_NUM_0, out, samples*4, &w, portMAX_DELAY);
 
-    // Reseta watchdog para evitar timeout durante reprodução
-    esp_task_wdt_reset();
-
-    totalBytesRead += bytesRead;
-
-    // Log a cada 100 chunks para verificar progresso
-    if (totalBytesRead % (bufferSize * 100) == 0) {
-      Serial.printf("Progresso: %lu bytes lidos (%.1f%%)\n", totalBytesRead, (totalBytesRead * 100.0f) / file.size());
+    // Reseta watchdog periodicamente (igual ao código original)
+    contador += samples;
+    if (contador >= 256) {
+      contador = 0;
+      esp_task_wdt_reset();
     }
   }
-
-  unsigned long endTime = millis();
-  unsigned long actualDuration = endTime - startTime;
-  Serial.printf("Áudio reproduzido em %lu ms (%.2f segundos)\n", actualDuration, actualDuration / 1000.0f);
-  Serial.printf("Total de bytes lidos: %lu bytes\n", totalBytesRead);
-  Serial.printf("Duração esperada: %.2f segundos, Duração real: %.2f segundos\n", 
-                estimatedDuration, actualDuration / 1000.0f);
-
-  // Libera memória e fecha arquivo
+  
+  // Libera memória alocada
   free(audioBuffer);
   free(i2sBuffer);
+  
+  // Fecha arquivo (igual ao código original)
   file.close();
 
-  // Limpeza: para I2S após reprodução
-  // Aguarda um pouco para garantir que todos os buffers I2S sejam esvaziados
-  delay(100);  // Aumentado de 50ms para 100ms para garantir que áudio termine
-  
-  // Força esvaziamento do buffer I2S antes de desinstalar
-  size_t bytes_written;
-  uint16_t dummy_buffer[128] = {0};
-  i2s_write(I2S_NUM_0, dummy_buffer, 0, &bytes_written, 0);  // Tenta escrever 0 bytes para forçar flush
-  
+  // Limpeza: delay de 50ms e para I2S (igual ao código original)
+  delay(50);
+  playing = false;
   i2s_driver_uninstall(I2S_NUM_0);
   i2s_ok = false;
-  playing = false;
-
-  Serial.printf("Reprodução de voz concluída - PTT deve ser desativado agora\n");
+  
+  Serial.println("Reprodução de voz concluída");
 }
 
 /**
@@ -1049,7 +1036,7 @@ void updateDisplay() {
     } else {
       // EM ESCUTA - Força verde mais brilhante para melhor visibilidade
       status_bg = TFT_GREEN;  // Usa TFT_GREEN padrão (mais brilhante que DARKGREEN)
-      status_text_color = TFT_BLACK;  // Texto preto para melhor contraste
+      status_text_color = TFT_WHITE;  // Texto BRANCO para máximo contraste sobre verde
       status_text = "EM ESCUTA";
       status_subtext = "";
     }
@@ -1089,15 +1076,17 @@ void updateDisplay() {
     // LIMPEZA EXTRA: Apaga retângulo exato onde o texto vai ficar antes de escrever
     // Sempre limpa para evitar texto fantasma, especialmente em modo "EM ESCUTA"
     int16_t clear_x = (W - status_text_w) / 2;
-    tft.fillRect(10, status_text_y - 2, W - 20, 28, status_bg);  // Área maior para garantir limpeza
+    // Limpa área do texto principal (não limpa área abaixo para não interferir)
+    tft.fillRect(10, status_text_y - 2, W - 20, 28, status_bg);
 
+    // Desenha o texto principal
     tft.setCursor(clear_x, status_text_y);
     tft.print(status_text);
     
     // Debug adicional para modo "EM ESCUTA"
     if (status_bg == TFT_GREEN) {
-      Serial.printf("TEXTO 'EM ESCUTA' DESENHADO: x=%d, y=%d, w=%d, bg=0x%04X\n", 
-                    clear_x, status_text_y, status_text_w, status_bg);
+      Serial.printf("TEXTO 'EM ESCUTA' DESENHADO: x=%d, y=%d, w=%d, bg=0x%04X, text_color=0x%04X (WHITE)\n", 
+                    clear_x, status_text_y, status_text_w, status_bg, status_text_color);
     }
     
     // Subtexto (para modo CW/Voz ou QSO)
@@ -1139,7 +1128,15 @@ void updateDisplay() {
       tft.print("QSO ATUAL");
     } else {
       // Limpa área de subtexto e código Morse se não está em TX (evita texto fantasma)
-      tft.fillRect(10, status_y + 35, W - 20, 50, status_bg);
+      // IMPORTANTE: NÃO limpar área do texto principal!
+      // status_text_y está aproximadamente em y=100 (status_y + 33 + 2)
+      // Limpa apenas área ABAIXO do texto principal (a partir de status_text_y + 30)
+      // Isso garante que o texto "EM ESCUTA" não seja apagado
+      int16_t clear_below_y = status_text_y + 30;  // Abaixo do texto principal
+      int16_t clear_height = (status_y + status_h) - clear_below_y;  // Até o final da caixa
+      if (clear_height > 0) {
+        tft.fillRect(10, clear_below_y, W - 20, clear_height, status_bg);
+      }
     }
   
     // ========== COURTESY TONE (Abaixo do status) ==========
@@ -1699,12 +1696,19 @@ void loop() {
       
       playVoiceFile("/id_voz_8k16.wav");
       
-      // Desativa PTT imediatamente após reprodução
+      // Desativa PTT IMEDIATAMENTE após reprodução terminar
+      // Não espera delay adicional - playVoiceFile() já terminou
       digitalWrite(PIN_PTT, LOW);
       unsigned long ptt_end_time = millis();
       unsigned long ptt_duration = ptt_end_time - ptt_start_time;
       Serial.printf("PTT DESATIVADO em %lu ms (duração total: %lu ms = %.2f segundos)\n", 
                     ptt_end_time, ptt_duration, ptt_duration / 1000.0f);
+      
+      // Verifica se PTT ficou aberto por muito tempo
+      if (ptt_duration > 25000) {  // Mais de 25 segundos
+        Serial.printf("AVISO: PTT ficou aberto por muito tempo! Esperado ~20s, real: %.2fs\n", ptt_duration / 1000.0f);
+      }
+      
       delay(50);  // Pequeno delay antes de mudar modo
       
       tx_mode = TX_NONE;
@@ -1756,12 +1760,18 @@ void loop() {
     
     playVoiceFile("/id_voz_8k16.wav");  // Toca indicativo de voz
     
-    // Desativa PTT imediatamente após reprodução
+    // Desativa PTT IMEDIATAMENTE após reprodução terminar
     digitalWrite(PIN_PTT, LOW);   // PTT OFF
     unsigned long ptt_end_time = millis();
     unsigned long ptt_duration = ptt_end_time - ptt_start_time;
     Serial.printf("PTT DESATIVADO em %lu ms (duração total: %lu ms = %.2f segundos)\n", 
                   ptt_end_time, ptt_duration, ptt_duration / 1000.0f);
+    
+    // Verifica se PTT ficou aberto por muito tempo
+    if (ptt_duration > 25000) {  // Mais de 25 segundos
+      Serial.printf("AVISO: PTT ficou aberto por muito tempo! Esperado ~20s, real: %.2fs\n", ptt_duration / 1000.0f);
+    }
+    
     delay(50);  // Pequeno delay antes de mudar modo
     
     tx_mode = TX_NONE;  // Reseta modo de transmissão

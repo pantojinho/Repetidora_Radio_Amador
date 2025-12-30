@@ -637,36 +637,74 @@ ffmpeg -i input.mp3 -ar 8000 -ac 1 -acodec pcm_s16le output.wav
 4. Exporte como **WAV (Microsoft) 16-bit PCM**
 5. Nomeie o arquivo como: `id_voz_8k16.wav`
 
-### Passo 4: Upload do Arquivo de Áudio
+### ⚠️ Passo 4: IMPORTANTE - Ordem de Upload
+
+**⚠️ ATENÇÃO: É CRÍTICO seguir esta ordem correta!**
+
+**ORDEM CORRETA:**
+1. **PRIMEIRO: Compile e faça upload do código** (sem o áudio ainda)
+2. **DEPOIS: Faça upload dos arquivos de áudio**
+
+**Por quê esta ordem é importante?**
+- O código precisa ser compilado primeiro para criar a estrutura do LittleFS no ESP32
+- Se você tentar fazer upload do áudio antes de compilar, pode ocorrer erro "SPIFFS image not found"
+- Após compilar e fazer upload do código uma vez, o sistema LittleFS estará inicializado e pronto para receber os arquivos
+- Esta ordem garante que o sistema de arquivos esteja configurado corretamente antes de tentar gravar arquivos
+
+### Passo 5: Upload do Código Principal (FAZER PRIMEIRO)
+
+1. Mantenha o ESP32 conectado via USB
+2. No Arduino IDE, abra o projeto (`RPT2ESP32-com33beep.ino`)
+3. **Compile o código** (`Sketch → Verify/Compile`) - verifique se não há erros
+4. **Carregue o código** (`Sketch → Upload`)
+5. Aguarde o upload completar e o ESP32 reiniciar
+
+> ✅ **Agora o código está no ESP32 e o sistema LittleFS está inicializado e pronto para receber arquivos**
+
+### Passo 6: Upload do Arquivo de Áudio (FAZER DEPOIS)
 
 1. **Feche o Monitor Serial** (obrigatório - o upload sempre falha se estiver aberto)
-2. Conecte o ESP32 via USB
-3. No Arduino IDE 2.x, abra o projeto (`RPT2ESP32-com33beep.ino`)
+2. Mantenha o ESP32 conectado via USB
+3. No Arduino IDE 2.x, com o projeto aberto (`RPT2ESP32-com33beep.ino`)
 4. Pressione **Ctrl + Shift + P** para abrir a Paleta de Comandos
 5. Digite: `Upload LittleFS` ou `Upload SPIFFS`
 6. Selecione o comando na lista
 7. Aguarde o upload completar (você verá "Data uploaded successfully" no console)
-8. O arquivo `id_voz_8k16.wav` será gravado na memória SPIFFS do ESP32
+8. O arquivo `id_voz_8k16.wav` será gravado na memória LittleFS do ESP32
 
 **Nota:** Se você receber um erro "SPIFFS image not found" ou o comando não aparecer:
+- **Certifique-se de ter compilado e feito upload do código primeiro!** (Passo 5)
 - Certifique-se de que a pasta `/data` está no mesmo nível do arquivo `.ino`
 - Verifique se você instalou o plugin corretamente (veja Passo 1)
 - Se instalou manualmente, verifique se o arquivo `.vsix` está diretamente em `plugins`, não em uma subpasta
 - Reinicie o Arduino IDE 2.x após instalar o plugin
 
-### Passo 5: Upload do Código Principal
+### Passo 7: Verificar Funcionamento
 
-1. Mantenha o ESP32 conectado via USB
-2. No Arduino IDE, compile o código
-3. Carregue o código (`Sketch → Upload`)
-4. O sistema será reiniciado e começará a operar
-
-### Passo 6: Verificar Funcionamento
+Após fazer upload do código e dos arquivos de áudio:
 
 1. Abra o **Serial Monitor** (115200 baud)
 2. Você deve ver mensagens do sistema:
    ```
-   Inicializando SPIFFS...
+   === INICIALIZACAO REPETIDORA ===
+   LittleFS inicializado com sucesso
+   Display: W=320, H=240
+   TEXTO 'EM ESCUTA' DESENHADO: x=79, y=100, w=162, bg=0x07E0
+   === INICIALIZACAO CONCLUIDA ===
+   ```
+3. O display deve mostrar:
+   - Header azul com o callsign
+   - Status "EM ESCUTA" em verde com texto branco
+   - Courtesy tone selecionado
+   - Estatísticas (QSOs, Uptime, CT)
+4. O LED RGB deve estar verde (modo idle)
+5. Após 2 segundos, deve iniciar a identificação inicial em voz
+6. Após ~5 segundos da voz, deve iniciar a identificação inicial em CW
+
+**Se você ver erros sobre arquivo não encontrado:**
+- Verifique se fez upload do arquivo de áudio (`Upload LittleFS`)
+- Certifique-se de que o arquivo está na pasta `/data` do projeto
+- **Certifique-se de ter seguido a ordem correta: código primeiro, depois áudio**
    SPIFFS inicializado com sucesso
    Tocando arquivo de voz: /id_voz_8k16.wav (XXXX bytes)
    Reprodução de voz concluída
@@ -678,8 +716,12 @@ ffmpeg -i input.mp3 -ar 8000 -ac 1 -acodec pcm_s16le output.wav
 ### Resumo
 
 - **Arquivo já incluído**: O projeto já possui `id_voz_8k16.wav` na pasta `/data`
-- **Só precisa**: Instalar plugin → Upload do arquivo → Compilar e carregar código
+- **Ordem correta**: 
+  1. Instalar plugin
+  2. **Compilar e fazer upload do código primeiro** (`Sketch > Upload`)
+  3. **Depois fazer upload do arquivo de áudio** (`Upload LittleFS`)
 - **Verificação**: Serial Monitor confirma funcionamento correto
+- **⚠️ IMPORTANTE**: Sempre compile o código antes de fazer upload do áudio para evitar erros
 
 ---
 
