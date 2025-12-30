@@ -2054,7 +2054,8 @@ void updateDisplay() {
         tft.setTextColor(TFT_CYAN, TFT_DARKBLUE);
         tft.setTextSize(2);
         char freq_str[20];
-        snprintf(freq_str, sizeof(freq_str), "%s MHz", config_frequency);
+        const char* unit = (config_frequency_unit == 1) ? "GHz" : "MHz";
+        snprintf(freq_str, sizeof(freq_str), "%s %s", config_frequency, unit);
         int16_t freqW = tft.textWidth(freq_str);
         int16_t freq_x = (W - freqW) / 2;
         tft.setCursor(freq_x, 35);

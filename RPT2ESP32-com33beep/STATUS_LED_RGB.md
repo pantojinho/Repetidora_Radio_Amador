@@ -154,3 +154,4 @@ O próximo passo é investigar por que o estado TX (vermelho) não está funcion
 
 **Recomendação:** Fazer upload do código atual e observar o Serial Monitor durante uma transmissão para ver quais valores são exibidos pelos logs de debug.
 
+
