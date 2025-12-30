@@ -303,11 +303,17 @@ No `User_Setup.h`:
 
 ---
 
-## 📚 Documentação
+## 📚 Documentation
 
-Para informações técnicas detalhadas, consulte:
-- [`DOCUMENTACAO_ESP32-2432S028.md`](RPT2ESP32-com33beep/DOCUMENTACAO_ESP32-2432S028.md) - Documentação completa em português
-- [`RPT2ESP32-com33beep.ino`](RPT2ESP32-com33beep/RPT2ESP32-com33beep.ino) - Código fonte com comentários detalhados
+For detailed technical information, please refer to:
+
+**Complete Project WIKIs:**
+- [`DOCUMENTACAO_ESP32-2432S028.md`](RPT2ESP32-com33beep/DOCUMENTACAO_ESP32-2432S028.md) - 📖 Complete documentation in **Portuguese**
+- [`README.md`](README.md) - 📖 Main project WIKI in **Portuguese**
+- [zread.ai](https://zread.ai/pantojinho/Repetidora_Radio_Amador) - 📚 Complete WIKI and documentation in **English** (English reading option)
+
+**Source Code:**
+- [`RPT2ESP32-com33beep.ino`](RPT2ESP32-com33beep/RPT2ESP32-com33beep.ino) - Source code with detailed comments
 
 ---
 
@@ -410,7 +416,7 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICE
 
 Feito com ❤️ para a comunidade de rádio amador
 
-[GitHub](https://github.com/pantojinho) | [Repositório](https://github.com/pantojinho/Repetidora_Radio_Amador)
+[GitHub](https://github.com/pantojinho) | [Repositório](https://github.com/pantojinho/Repetidora_Radio_Amador) | [zread.ai](https://zread.ai/pantojinho/Repetidora_Radio_Amador)
 
 </div>
 

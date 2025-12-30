@@ -1,6 +1,7 @@
 # Documentação Completa - Repetidora ESP32-2432S028 (CYD)
 
-## 📋 Índice
+## 📋 Table of Contents
+- [Project WIKIs](#project-wikis)
 - [Especificações da Placa](#placa-esp32-2432s028r-cheap-yellow-display)
 - [Configuração de Pinagem](#configuração-de-pinagem)
 - [Configuração do User_Setup.h](#configuração-do-user_setuph)
@@ -15,6 +16,18 @@
 - [Como Contribuir](#como-contribuir)
 - [Autor e Contato](#autor-e-contato)
 - [Changelog](#changelog)
+
+---
+
+## Project WIKIs
+
+This is one of the complete WIKIs for the project. To access all available WIKIs:
+
+- 📖 **Main WIKI (Portuguese)**: [`README.md`](../README.md) - General project documentation
+- 📚 **English WIKI**: [zread.ai](https://zread.ai/pantojinho/Repetidora_Radio_Amador) - Complete documentation in English (English reading option)
+- 📖 **Technical WIKI (Portuguese)**: This document - Detailed technical documentation
+
+All WIKIs contain complete information about the project, in different languages and detail levels.
 
 ---
 
@@ -544,6 +557,10 @@ Desenvolvido como um projeto open source para a comunidade de rádio amador, com
 - Interface visual moderna e profissional
 - Fácil de configurar e usar
 
+### Links Úteis
+
+- [zread.ai](https://zread.ai/pantojinho/Repetidora_Radio_Amador) - Visualização interativa do código com análise inteligente
+
 ### Contato
 
 Para questões sobre o projeto:
@@ -598,6 +615,8 @@ Este projeto está licenciado sob a [Licença MIT](LICENSE).
 **📡 Junior - PY2PER**
 
 Feito com ❤️ para a comunidade de rádio amador
+
+[GitHub](https://github.com/pantojinho) | [zread.ai](https://zread.ai/pantojinho/Repetidora_Radio_Amador)
 
 73! 📻
 
