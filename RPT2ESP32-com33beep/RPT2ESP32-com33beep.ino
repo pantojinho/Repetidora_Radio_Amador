@@ -125,10 +125,30 @@
 // ESTES TEMPOS FORAM MANTIDOS CONFORME O CÓDIGO ORIGINAL PARA COMPATIBILIDADE.
 // ==================================================================
 
+// ====================== SISTEMA DE DEBUG ======================
+// Níveis de debug configuráveis para otimizar o Serial Monitor:
+//
+// 0 = NONE: Apenas erros e eventos críticos (mínimo de mensagens)
+// 1 = MINIMAL: Eventos principais (PTT, COR, QSO, IDs) - RECOMENDADO
+// 2 = NORMAL: Debug padrão (inclui display, CW, loop stats) - sem JSON verbose
+// 3 = VERBOSE: Tudo incluindo JSON detalhado (para debug avançado)
+//
+// Para mudar o nível, altere DEBUG_LEVEL abaixo:
+#define DEBUG_LEVEL 1  // Altere aqui: 0=NONE, 1=MINIMAL, 2=NORMAL, 3=VERBOSE
+
+// Flags de controle por categoria
+#define DEBUG_JSON (DEBUG_LEVEL >= 3)           // Mensagens JSON detalhadas
+#define DEBUG_DISPLAY (DEBUG_LEVEL >= 2)        // Mensagens de display
+#define DEBUG_PTT (DEBUG_LEVEL >= 1)            // Debug PTT periódico
+#define DEBUG_CW (DEBUG_LEVEL >= 2)            // Debug CW/Morse
+#define DEBUG_EVENTS (DEBUG_LEVEL >= 1)         // Eventos principais
+
 // #region agent log - Debug logging helper
 void debugLog(const char* location, const char* message, const char* hypothesisId, int data1 = 0, int data2 = 0, int data3 = 0) {
-  Serial.printf("DEBUG:{\"location\":\"%s\",\"message\":\"%s\",\"hypothesisId\":\"%s\",\"data\":{\"v1\":%d,\"v2\":%d,\"v3\":%d},\"timestamp\":%lu}\n",
-                location, message, hypothesisId, data1, data2, data3, millis());
+  if (DEBUG_JSON) {
+    Serial.printf("DEBUG:{\"location\":\"%s\",\"message\":\"%s\",\"hypothesisId\":\"%s\",\"data\":{\"v1\":%d,\"v2\":%d,\"v3\":%d},\"timestamp\":%lu}\n",
+                  location, message, hypothesisId, data1, data2, data3, millis());
+  }
 }
 
 // Log para arquivo NDJSON (para análise offline)
@@ -352,7 +372,9 @@ void i2s_init(uint32_t rate) {
 
   // Marca sistema como pronto
   i2s_ok = true;
-  Serial.printf("I2S inicializado - Speaker em GPIO%d, Taxa: %dHz\n", SPEAKER_PIN, rate);
+  if (DEBUG_LEVEL >= 2) {
+    Serial.printf("I2S: GPIO%d, %dHz\n", SPEAKER_PIN, rate);
+  }
 }
 
 /**
@@ -530,7 +552,9 @@ void playVoiceFile(const char* filename) {
   
   // Extrai sample rate do header (bytes 24-27, little-endian) - igual ao código original
   uint32_t rate = header[24] | (header[25]<<8) | (header[26]<<16) | (header[27]<<24);
-  Serial.printf("Tocando arquivo: %s (sample rate: %d Hz)\n", filename, rate);
+  if (DEBUG_LEVEL >= 2) {
+    Serial.printf("Voz: %s (%dHz)\n", filename, rate);
+  }
   
   // Inicializa I2S com a taxa do arquivo (igual ao código original)
   i2s_init(rate);
@@ -601,7 +625,9 @@ void playVoiceFile(const char* filename) {
   i2s_driver_uninstall(I2S_NUM_0);
   i2s_ok = false;
   
-  Serial.println("Reprodução de voz concluída");
+  if (DEBUG_EVENTS) {
+    Serial.println("Voz concluída");
+  }
 }
 
 /**
@@ -623,8 +649,9 @@ void playVoiceFile(const char* filename) {
 void playCW(const String &txt) {
   if (playing) return;
 
-  Serial.printf("Reproduzindo em CW (Morse): %s\n", txt.c_str());
-  Serial.printf("Texto: %d caracteres\n", txt.length());
+  if (DEBUG_EVENTS) {
+    Serial.printf("CW: %s (%d chars)\n", txt.c_str(), txt.length());
+  }
 
   // Inicializa I2S para áudio
   i2s_init(SAMPLE_RATE);
@@ -693,7 +720,9 @@ void playCW(const String &txt) {
     }
 
     if (found && code) {
-      Serial.printf("Caractere %c: %s\n", c, code);
+      if (DEBUG_CW) {
+        Serial.printf("CW: %c (%s)\n", c, code);
+      }
 
       // Atualiza display com o caractere atual e código Morse
       snprintf(current_morse_display, sizeof(current_morse_display), "%c", c);
@@ -719,16 +748,22 @@ void playCW(const String &txt) {
       // Delay entre caracteres (3 pontos)
       delay(3 * dotDuration);
     } else if (c == ' ') {
-      Serial.println("Espaço detectado");
+      if (DEBUG_CW) {
+        Serial.println("CW: Espaço");
+      }
       // Espaço entre palavras (7 pontos)
       delay(7 * dotDuration);
     } else {
-      Serial.printf("Caractere não encontrado: %c\n", c);
+      if (DEBUG_CW) {
+        Serial.printf("CW: Caractere inválido '%c'\n", c);
+      }
     }
   }
 
   unsigned long endTime = millis();
-  Serial.printf("Tempo total CW: %lu ms\n", endTime - startTime);
+  if (DEBUG_EVENTS) {
+    Serial.printf("CW concluído: %lu ms\n", endTime - startTime);
+  }
 
   // Delay final
   delay(50);
@@ -741,8 +776,6 @@ void playCW(const String &txt) {
   i2s_driver_uninstall(I2S_NUM_0);
   i2s_ok = false;
   playing = false;
-
-  Serial.println("Reprodução CW concluída");
 }
 
 // ====================== CONTROLE DO PTT ========================
@@ -773,8 +806,10 @@ void setPTT(bool on) {
   // Controla o pino físico
   digitalWrite(PIN_PTT, on ? HIGH : LOW);
 
-  // Log e timestamp
-  Serial.println(on ? "PTT ON" : "PTT OFF");
+  // Log e timestamp (sempre mostra eventos PTT - são importantes)
+  if (DEBUG_EVENTS) {
+    Serial.println(on ? "PTT ON" : "PTT OFF");
+  }
   if (on) {
     ptt_activated_at = millis();  // Registra quando foi ativado (para timeout)
   }
@@ -1089,9 +1124,15 @@ void updateDisplay() {
       status_subtext = "";
     }
     
-    // Debug: Log do estado atual do display
-    Serial.printf("DISPLAY STATE: tx_mode=%d, ptt_state=%d, cor_stable=%d, status_bg=0x%04X, text='%s'\n",
-                  tx_mode, ptt_state, cor_stable, status_bg, status_text);
+    // Debug: Log do estado atual do display (só quando mudar)
+    static uint16_t last_logged_bg = 0xFFFF;
+    static TxMode last_logged_tx_mode = TX_NONE;
+    if (DEBUG_DISPLAY && (status_bg != last_logged_bg || tx_mode != last_logged_tx_mode)) {
+      Serial.printf("DISPLAY STATE: tx_mode=%d, ptt_state=%d, cor_stable=%d, status_bg=0x%04X, text='%s'\n",
+                    tx_mode, ptt_state, cor_stable, status_bg, status_text);
+      last_logged_bg = status_bg;
+      last_logged_tx_mode = tx_mode;
+    }
     
     // Caixa de status com bordas arredondadas (ajustado para header de 60px)
     int16_t status_y = 65;  // Ajustado de 55 para 65 (header agora é 60px)
@@ -1109,7 +1150,9 @@ void updateDisplay() {
       tft.drawRoundRect(10, status_y, W - 20, status_h, 10, TFT_WHITE);
       last_status_bg = status_bg;
       
-      Serial.printf("STATUS REDRAWN: bg=0x%04X, text='%s'\n", status_bg, status_text);
+      if (DEBUG_DISPLAY) {
+        Serial.printf("STATUS: %s (bg=0x%04X)\n", status_text, status_bg);
+      }
     }
     
     // Texto de status grande - SEMPRE redesenhado para garantir visibilidade
@@ -1131,10 +1174,10 @@ void updateDisplay() {
     tft.setCursor(clear_x, status_text_y);
     tft.print(status_text);
     
-    // Debug adicional para modo "EM ESCUTA"
-    if (status_bg == TFT_GREEN) {
-      Serial.printf("TEXTO 'EM ESCUTA' DESENHADO: x=%d, y=%d, w=%d, bg=0x%04X, text_color=0x%04X (WHITE)\n", 
-                    clear_x, status_text_y, status_text_w, status_bg, status_text_color);
+    // Debug adicional para modo "EM ESCUTA" (apenas em modo verbose)
+    if (DEBUG_JSON && status_bg == TFT_GREEN) {
+      Serial.printf("TEXTO 'EM ESCUTA' DESENHADO: x=%d, y=%d, w=%d\n", 
+                    clear_x, status_text_y, status_text_w);
     }
     
     // Subtexto (para modo CW/Voz ou QSO)
@@ -1573,7 +1616,9 @@ void loop() {
   // #region agent log - Loop stats (a cada 5s - reduzido para detectar problemas mais rápido)
   if (millis() - lastLoopLog >= 5000) {
     lastLoopLog = millis();
-    Serial.printf("Loop: count=%lu, heap=%d, uptime=%lums\n", loopCount, ESP.getFreeHeap(), millis());
+    if (DEBUG_LEVEL >= 2) {  // Só mostra em nível NORMAL ou superior
+      Serial.printf("Loop: count=%lu, heap=%d, uptime=%lums\n", loopCount, ESP.getFreeHeap(), millis());
+    }
     logToFile("D", "LOOP_STATS", millis(), loopCount, ESP.getFreeHeap(), 0);
   }
   // #endregion
@@ -1609,13 +1654,15 @@ void loop() {
   // Lê o pino COR (HIGH = sinal detectado - conforme código original)
   bool cor = (digitalRead(PIN_COR) == HIGH);
 
-  // Debug: Verifica estado do PTT periodicamente
-  static unsigned long last_ptt_debug = 0;
-  if (millis() - last_ptt_debug >= 2000) {  // A cada 2 segundos
-    last_ptt_debug = millis();
-    bool ptt_pin_state = digitalRead(PIN_PTT);
-    Serial.printf("DEBUG PTT: ptt_state=%d, PIN_PTT=%d, cor=%d, cor_stable=%d, tx_mode=%d\n",
-                  ptt_state, ptt_pin_state, cor, cor_stable, tx_mode);
+  // Debug: Verifica estado do PTT periodicamente (apenas se habilitado)
+  if (DEBUG_PTT) {
+    static unsigned long last_ptt_debug = 0;
+    if (millis() - last_ptt_debug >= 10000) {  // A cada 10 segundos (reduzido de 2s)
+      last_ptt_debug = millis();
+      bool ptt_pin_state = digitalRead(PIN_PTT);
+      Serial.printf("PTT: state=%d, pin=%d, cor=%d, tx_mode=%d\n",
+                    ptt_state, ptt_pin_state, cor, tx_mode);
+    }
   }
 
   // SISTEMA DE DEBOUNCE PARA COR (conforme código original)
@@ -1627,7 +1674,9 @@ void loop() {
     // Após 350ms de estado estável e diferente do estado atual, atualiza
     // #region agent log
     logToFile("B", "COR_CHANGED", millis(), cor, cor_stable, ESP.getFreeHeap());
-    Serial.printf("COR mudou: %d -> %d (após %lums estável)\n", cor_stable, cor, millis() - last_change);
+    if (DEBUG_EVENTS) {
+      Serial.printf("COR: %d -> %d\n", cor_stable, cor);
+    }
     // #endregion
     cor_stable = cor;
     needsFullRedraw = true;  // Marca para redraw completo
@@ -1725,12 +1774,13 @@ void loop() {
     // 1. ID Inicial em Voz (Executa uma única vez após 2 segundos)
     if (!initial_voice_done && time_since_boot >= 2000) {
       #if !SKIP_INITIAL_IDS_IF_FILE_MISSING
-      Serial.println("=== IDENTIFICAÇÃO INICIAL EM VOZ ===");
+      if (DEBUG_EVENTS) {
+        Serial.println("=== ID INICIAL VOZ ===");
+      }
       unsigned long ptt_start_time = millis();
       tx_mode = TX_VOICE;
       updateDisplay();
       digitalWrite(PIN_PTT, HIGH);
-      Serial.printf("PTT ATIVADO em %lu ms\n", ptt_start_time);
       delay(100);  // Aguarda estabilização do PTT
       
       playVoiceFile("/id_voz_8k16.wav");
@@ -1740,19 +1790,20 @@ void loop() {
       digitalWrite(PIN_PTT, LOW);
       unsigned long ptt_end_time = millis();
       unsigned long ptt_duration = ptt_end_time - ptt_start_time;
-      Serial.printf("PTT DESATIVADO em %lu ms (duração total: %lu ms = %.2f segundos)\n", 
-                    ptt_end_time, ptt_duration, ptt_duration / 1000.0f);
       
-      // Verifica se PTT ficou aberto por muito tempo
+      if (DEBUG_EVENTS) {
+        Serial.printf("ID Voz: %.1fs\n", ptt_duration / 1000.0f);
+      }
+      
+      // Verifica se PTT ficou aberto por muito tempo (sempre mostra avisos)
       if (ptt_duration > 25000) {  // Mais de 25 segundos
-        Serial.printf("AVISO: PTT ficou aberto por muito tempo! Esperado ~20s, real: %.2fs\n", ptt_duration / 1000.0f);
+        Serial.printf("AVISO: PTT aberto por muito tempo! %.1fs\n", ptt_duration / 1000.0f);
       }
       
       delay(50);  // Pequeno delay antes de mudar modo
       
       tx_mode = TX_NONE;
       updateDisplay();
-      Serial.println("Identificação inicial de voz concluída");
       #else
       Serial.println("=== PULANDO IDENTIFICAÇÃO INICIAL EM VOZ (arquivo ausente) ===");
       delay(2000);
@@ -1764,7 +1815,9 @@ void loop() {
     
     // 2. ID Inicial em CW (Executa 5 segundos APÓS a voz terminar)
     else if (initial_voice_done && (millis() - cw_timer_start >= 5000)) {
-      Serial.println("=== IDENTIFICAÇÃO INICIAL EM CW ===");
+      if (DEBUG_EVENTS) {
+        Serial.println("=== ID INICIAL CW ===");
+      }
       tx_mode = TX_CW;
       updateDisplay();
       digitalWrite(PIN_PTT, HIGH);
@@ -1774,7 +1827,6 @@ void loop() {
       digitalWrite(PIN_PTT, LOW);
       tx_mode = TX_NONE;
       updateDisplay();
-      Serial.println("Identificação inicial CW concluída");
 
       // Marca que TODOS os IDs iniciais foram completados
       initial_id_done = true;
@@ -1789,12 +1841,13 @@ void loop() {
   // Identificação em voz a cada 11 minutos (após IDs iniciais)
   if (initial_id_done && millis() - last_voice >= VOICE_INTERVAL_MS && !playing && !ptt_state) {
     last_voice = millis();
-    Serial.println("=== IDENTIFICAÇÃO EM VOZ (11 min) ===");
+    if (DEBUG_EVENTS) {
+      Serial.println("=== ID VOZ (11min) ===");
+    }
     unsigned long ptt_start_time = millis();
     tx_mode = TX_VOICE;  // Define modo de transmissão
     updateDisplay();  // Atualiza display para mostrar TX VOZ
     digitalWrite(PIN_PTT, HIGH);  // PTT ON
-    Serial.printf("PTT ATIVADO em %lu ms\n", ptt_start_time);
     delay(100);  // Aguarda estabilização do PTT
     
     playVoiceFile("/id_voz_8k16.wav");  // Toca indicativo de voz
@@ -1803,25 +1856,28 @@ void loop() {
     digitalWrite(PIN_PTT, LOW);   // PTT OFF
     unsigned long ptt_end_time = millis();
     unsigned long ptt_duration = ptt_end_time - ptt_start_time;
-    Serial.printf("PTT DESATIVADO em %lu ms (duração total: %lu ms = %.2f segundos)\n", 
-                  ptt_end_time, ptt_duration, ptt_duration / 1000.0f);
     
-    // Verifica se PTT ficou aberto por muito tempo
+    if (DEBUG_EVENTS) {
+      Serial.printf("ID Voz: %.1fs\n", ptt_duration / 1000.0f);
+    }
+    
+    // Verifica se PTT ficou aberto por muito tempo (sempre mostra avisos)
     if (ptt_duration > 25000) {  // Mais de 25 segundos
-      Serial.printf("AVISO: PTT ficou aberto por muito tempo! Esperado ~20s, real: %.2fs\n", ptt_duration / 1000.0f);
+      Serial.printf("AVISO: PTT aberto por muito tempo! %.1fs\n", ptt_duration / 1000.0f);
     }
     
     delay(50);  // Pequeno delay antes de mudar modo
     
     tx_mode = TX_NONE;  // Reseta modo de transmissão
     updateDisplay();  // Volta para estado normal
-    Serial.println("Identificação de voz concluída");
   }
 
   // Identificação em CW (Morse) a cada 16 minutos (após IDs iniciais)
   if (initial_id_done && millis() - last_cw >= CW_INTERVAL_MS && !playing && !ptt_state) {
     last_cw = millis();
-    Serial.println("=== IDENTIFICAÇÃO EM CW (16 min) ===");
+    if (DEBUG_EVENTS) {
+      Serial.println("=== ID CW (16min) ===");
+    }
     tx_mode = TX_CW;  // Define modo de transmissão
     updateDisplay();  // Atualiza display para mostrar TX CW
     digitalWrite(PIN_PTT, HIGH);  // PTT ON
@@ -1831,6 +1887,5 @@ void loop() {
     digitalWrite(PIN_PTT, LOW);   // PTT OFF
     tx_mode = TX_NONE;  // Reseta modo de transmissão
     updateDisplay();  // Volta para estado normal
-    Serial.println("Identificação CW concluída");
   }
 }
