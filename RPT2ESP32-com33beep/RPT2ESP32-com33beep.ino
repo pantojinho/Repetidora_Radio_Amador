@@ -5,6 +5,9 @@
 #include <SPI.h>
 #include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <Preferences.h>
 
 // ==================================================================
 // CÓDIGO ADAPTADO PARA ESP32-2432S028R (Cheap Yellow Display - CYD)
@@ -133,8 +136,8 @@
 // 2 = NORMAL: Debug padrão (inclui display, CW, loop stats) - sem JSON verbose
 // 3 = VERBOSE: Tudo incluindo JSON detalhado (para debug avançado)
 //
-// Para mudar o nível, altere DEBUG_LEVEL abaixo:
-#define DEBUG_LEVEL 1  // Altere aqui: 0=NONE, 1=MINIMAL, 2=NORMAL, 3=VERBOSE
+// NOTA: DEBUG_LEVEL agora é uma variável configurável via interface web
+uint8_t DEBUG_LEVEL = 1;  // 0=NONE, 1=MINIMAL, 2=NORMAL, 3=VERBOSE
 
 // Flags de controle por categoria
 #define DEBUG_JSON (DEBUG_LEVEL >= 3)           // Mensagens JSON detalhadas
@@ -206,28 +209,71 @@ XPT2046_Touchscreen ts(TOUCH_CS);
 #define PIN_PTT 27  // Extended GPIO27 (output to radio PTT)
 #define PIN_BL  21  // Backlight (não mudar - sempre HIGH)
 #define SPEAKER_PIN 26  // Speaker onboard via JST 2-pin connector
+#define PIN_BOOT 0  // BOOT Button (integrado na placa ESP32-2432S028R)
 
 // LED RGB pins (ACTIVE LOW - LOW = acende, HIGH = apaga) - conforme ESP32-2432S028R
 #define PIN_LED_R 4
 #define PIN_LED_G 16
 #define PIN_LED_B 17
 
-// ====================== CONFIG =======================
-const char* CALLSIGN = "PY2KEP SP";
+// ====================== CONFIGURAÇÃO VIA WIFI ======================
+// Sistema de gerenciamento de configurações através de interface web
+Preferences preferences;
+WebServer server(80);
+
+// Credenciais do Access Point (Configuração)
+#define AP_SSID "REPETIDORA_SETUP"
+#define AP_PASSWORD "repetidora123"
+
+// Estados do BOOT Button
+bool boot_button_pressed = false;
+unsigned long boot_button_start = 0;
+#define RESET_FACTORY_MS 5000  // 5 segundos para reset de fábrica
+bool configMode = false;  // Mantido para compatibilidade com código existente
+
+// ====================== VARIÁVEIS DE CONFIGURAÇÃO ======================
+// Estas variáveis podem ser configuradas via interface web
+char config_callsign[32] = "PY2KEP SP";  // Indicativo da repetidora
+char config_frequency[16] = "439.450";    // Frequência em MHz
+char config_cw_message[64] = "PY2KEP SP"; // Mensagem Morse (ID)
+
+// Configurações de tempos (milissegundos)
+uint32_t config_hang_time = 600;         // Hang time (após QSO)
+uint32_t config_ptt_timeout = 4*60*1000; // Timeout do PTT (4 minutos)
+uint32_t config_voice_interval = 11*60*1000;  // Intervalo ID voz (11 minutos)
+uint32_t config_cw_interval = 16*60*1000;    // Intervalo ID CW (16 minutos)
+uint32_t config_ct_change = 5;           // Troca CT a cada X QSOs
+uint8_t config_ct_index = 0;             // Courtesy Tone selecionado (0-32)
+
+// Configurações de Morse (CW)
+uint16_t config_cw_wpm = 13;            // Velocidade em WPM (palavras por minuto)
+uint16_t config_cw_freq = 600;          // Frequência em Hz para tom CW
+
+// Configurações de áudio
+float config_volume = 0.70f;             // Volume (0.0 - 1.0)
+uint16_t config_sample_rate = 22050;    // Taxa de amostragem para áudio
+
+// Configurações de debug
+uint8_t config_debug_level = 1;         // Nível de debug (0=NONE, 1=MINIMAL, 2=NORMAL, 3=VERBOSE)
+
+// ====================== CONFIG ORIGINAL (mantido para compatibilidade) =======================
 #define WDT_TIMEOUT_SECONDS 30
-#define SAMPLE_RATE 22050
-#define HANG_TIME_MS 600
-#define PTT_TIMEOUT_MS 4UL*60UL*1000UL  // 4 minutos de timeout
-float VOLUME = 0.70f;
+#define SAMPLE_RATE config_sample_rate
+#define HANG_TIME_MS config_hang_time
+#define PTT_TIMEOUT_MS config_ptt_timeout
+float VOLUME = config_volume;
 
-// Constantes para CW (Morse)
-#define CW_WPM 13        // Velocidade em palavras por minuto
-#define CW_FREQ 600      // Frequência em Hz para tom CW
+// Constantes para CW (Morse) - agora dinâmicas
+#define CW_WPM config_cw_wpm
+#define CW_FREQ config_cw_freq
 
-// Intervalos de Identificação Automática (ID Voice/CW)
-const uint32_t VOICE_INTERVAL_MS = 11UL*60UL*1000UL;  // 11 minutos - ID em voz (conforme código original)
-const uint32_t CW_INTERVAL_MS   = 16UL*60UL*1000UL;  // 16 minutos - ID em CW/Morse (conforme código original)
-const uint8_t  QSO_CT_CHANGE   = 5;                 // Troca CT a cada 5 QSOs (código original)
+// Intervalos de Identificação Automática - agora dinâmicos
+#define VOICE_INTERVAL_MS config_voice_interval
+#define CW_INTERVAL_MS config_cw_interval
+#define QSO_CT_CHANGE config_ct_change
+
+// Variável global para o callsign (usada em vários lugares)
+const char* CALLSIGN = config_callsign;
 
 // ====================== GLOBAIS ======================
 bool cor_stable = false;
@@ -239,6 +285,7 @@ unsigned long last_change = 0;  // Para debounce do COR
 const uint32_t COR_DEBOUNCE_MS = 350;  // Tempo de debounce (350ms)
 bool ptt_locked = false;  // Flag para bloquear PTT após timeout
 unsigned long ptt_activated_at = 0;  // Timestamp quando PTT foi ativado (para timeout)
+bool show_ip_screen = false;  // Flag para mostrar IP (quando BOOT pressionado)
 
 uint16_t qso_count = 0;
 uint8_t  ct_index  = 0;
@@ -319,6 +366,623 @@ CT tones[N_CT] = {
   {"XP OK",250,{{440,444,125},{880,884,125}},2}
 };
 
+
+// ====================== FUNÇÕES DE GERENCIAMENTO DE CONFIGURAÇÕES ========================
+
+/**
+ * @brief Carrega configurações do sistema Preferences (NVS)
+ *
+ * Esta função carrega todas as configurações salvas na memória não-volátil
+ * do ESP32. Se uma configuração não existir, usa o valor padrão.
+ *
+ * Configurações carregadas:
+ * - Indicativo (callsign)
+ * - Frequência
+ * - Mensagem Morse
+ * - Tempos (hang time, timeout, intervalos)
+ * - Configurações de Morse (WPM, frequência)
+ * - Configurações de áudio (volume, sample rate)
+ * - Configurações de debug
+ * - Courtesy Tone selecionado
+ */
+void loadPreferences() {
+  Serial.println("Carregando configurações...");
+
+  // Inicializa o namespace "config"
+  preferences.begin("config", false);
+
+  // Carrega indicativo
+  if (preferences.isKey("callsign")) {
+    preferences.getString("callsign", config_callsign, sizeof(config_callsign));
+    Serial.printf("Callsign: %s\n", config_callsign);
+  }
+
+  // Carrega frequência
+  if (preferences.isKey("frequency")) {
+    preferences.getString("frequency", config_frequency, sizeof(config_frequency));
+    Serial.printf("Frequência: %s MHz\n", config_frequency);
+  }
+
+  // Carrega mensagem Morse
+  if (preferences.isKey("cw_message")) {
+    preferences.getString("cw_message", config_cw_message, sizeof(config_cw_message));
+    Serial.printf("Mensagem CW: %s\n", config_cw_message);
+  }
+
+  // Carrega hang time
+  if (preferences.isKey("hang_time")) {
+    config_hang_time = preferences.getUInt("hang_time", 600);
+    Serial.printf("Hang Time: %lu ms\n", config_hang_time);
+  }
+
+  // Carrega PTT timeout
+  if (preferences.isKey("ptt_timeout")) {
+    config_ptt_timeout = preferences.getUInt("ptt_timeout", 4*60*1000);
+    Serial.printf("PTT Timeout: %lu ms\n", config_ptt_timeout);
+  }
+
+  // Carrega intervalo de voz
+  if (preferences.isKey("voice_interval")) {
+    config_voice_interval = preferences.getUInt("voice_interval", 11*60*1000);
+    Serial.printf("Voice Interval: %lu ms\n", config_voice_interval);
+  }
+
+  // Carrega intervalo de CW
+  if (preferences.isKey("cw_interval")) {
+    config_cw_interval = preferences.getUInt("cw_interval", 16*60*1000);
+    Serial.printf("CW Interval: %lu ms\n", config_cw_interval);
+  }
+
+  // Carrega troca de CT
+  if (preferences.isKey("ct_change")) {
+    config_ct_change = preferences.getUInt("ct_change", 5);
+    Serial.printf("CT Change: %lu QSOs\n", config_ct_change);
+  }
+
+  // Carrega CT selecionado
+  if (preferences.isKey("ct_index")) {
+    config_ct_index = preferences.getUChar("ct_index", 0);
+    ct_index = config_ct_index;
+    Serial.printf("CT Index: %d\n", config_ct_index);
+  }
+
+  // Carrega velocidade CW (WPM)
+  if (preferences.isKey("cw_wpm")) {
+    config_cw_wpm = preferences.getUInt("cw_wpm", 13);
+    Serial.printf("CW WPM: %u\n", config_cw_wpm);
+  }
+
+  // Carrega frequência CW (Hz)
+  if (preferences.isKey("cw_freq")) {
+    config_cw_freq = preferences.getUInt("cw_freq", 600);
+    Serial.printf("CW Frequency: %u Hz\n", config_cw_freq);
+  }
+
+  // Carrega volume
+  if (preferences.isKey("volume")) {
+    config_volume = preferences.getFloat("volume", 0.70f);
+    Serial.printf("Volume: %.2f\n", config_volume);
+  }
+
+  // Carrega sample rate
+  if (preferences.isKey("sample_rate")) {
+    config_sample_rate = preferences.getUInt("sample_rate", 22050);
+    Serial.printf("Sample Rate: %u Hz\n", config_sample_rate);
+  }
+
+  // Carrega nível de debug
+  if (preferences.isKey("debug_level")) {
+    config_debug_level = preferences.getUChar("debug_level", 1);
+    DEBUG_LEVEL = config_debug_level;
+    Serial.printf("Debug Level: %d\n", config_debug_level);
+  }
+
+  preferences.end();
+  Serial.println("Configurações carregadas com sucesso");
+}
+
+/**
+ * @brief Salva configurações no sistema Preferences (NVS)
+ *
+ * Esta função salva todas as configurações atuais na memória não-volátil
+ * do ESP32, garantindo que elas persistam após reinicialização.
+ */
+void savePreferences() {
+  Serial.println("Salvando configurações...");
+
+  preferences.begin("config", false);
+
+  // Salva indicativo
+  preferences.putString("callsign", config_callsign);
+
+  // Salva frequência
+  preferences.putString("frequency", config_frequency);
+
+  // Salva mensagem Morse
+  preferences.putString("cw_message", config_cw_message);
+
+  // Salva hang time
+  preferences.putUInt("hang_time", config_hang_time);
+
+  // Salva PTT timeout
+  preferences.putUInt("ptt_timeout", config_ptt_timeout);
+
+  // Salva intervalo de voz
+  preferences.putUInt("voice_interval", config_voice_interval);
+
+  // Salva intervalo de CW
+  preferences.putUInt("cw_interval", config_cw_interval);
+
+  // Salva troca de CT
+  preferences.putUInt("ct_change", config_ct_change);
+
+  // Salva CT selecionado
+  preferences.putUChar("ct_index", config_ct_index);
+
+  // Salva velocidade CW (WPM)
+  preferences.putUInt("cw_wpm", config_cw_wpm);
+
+  // Salva frequência CW (Hz)
+  preferences.putUInt("cw_freq", config_cw_freq);
+
+  // Salva volume
+  preferences.putFloat("volume", config_volume);
+
+  // Salva sample rate
+  preferences.putUInt("sample_rate", config_sample_rate);
+
+  // Salva nível de debug
+  preferences.putUChar("debug_level", config_debug_level);
+
+  preferences.end();
+  Serial.println("Configurações salvas com sucesso");
+}
+
+// ====================== SERVIDOR WEB ========================
+
+/**
+ * @brief Gera a página HTML completa de configuração
+ *
+ * Esta função gera uma página HTML responsiva com todas as configurações
+ * da repetidora, organizadas em seções para fácil visualização e edição.
+ *
+ * A página inclui:
+ * - Informações básicas (Indicativo, Frequência)
+ * - Configurações de Morse (Mensagem, WPM, Frequência)
+ * - Configurações de tempos (Hang Time, PTT Timeout, Intervalos de ID)
+ * - Configurações de áudio (Volume, Sample Rate)
+ * - Configurações de Courtesy Tone (Seletor dos 33 CTs)
+ * - Configurações de debug (Nível de detalhamento)
+ * - Status do sistema (Temperatura, Uptime, Memória)
+ *
+ * @return String com o HTML completo da página
+ */
+String generateConfigPage() {
+  String html = "<!DOCTYPE html>";
+  html += "<html lang='pt-BR'>";
+  html += "<head>";
+  html += "<meta charset='UTF-8'>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+  html += "<title>Repetidora - Configuração</title>";
+  html += "<style>";
+  html += "* { box-sizing: border-box; margin: 0; padding: 0; }";
+  html += "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; ";
+  html += "background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); min-height: 100vh; ";
+  html += "color: #fff; padding: 10px; }";
+  html += ".container { max-width: 800px; margin: 0 auto; }";
+  html += "h1 { text-align: center; color: #4a9eff; margin: 20px 0; font-size: 24px; }";
+  html += ".section { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 15px; ";
+  html += "margin: 10px 0; border: 1px solid rgba(255,255,255,0.1); }";
+  html += ".section h2 { color: #00d4ff; font-size: 18px; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.2); ";
+  html += "padding-bottom: 8px; }";
+  html += ".field { margin: 10px 0; }";
+  html += "label { display: block; margin-bottom: 5px; color: #aaa; font-size: 14px; }";
+  html += "input[type='text'], input[type='number'], select, textarea { ";
+  html += "width: 100%; padding: 10px; border: 1px solid #444; border-radius: 5px; ";
+  html += "background: rgba(0,0,0,0.3); color: #fff; font-size: 16px; }";
+  html += "input[type='range'] { width: 100%; margin: 10px 0; }";
+  html += ".range-value { text-align: right; color: #4a9eff; font-weight: bold; }";
+  html += ".info { background: rgba(74, 158, 255, 0.2); padding: 10px; border-radius: 5px; ";
+  html += "margin: 10px 0; font-size: 14px; }";
+  html += ".info-label { color: #aaa; margin-right: 10px; }";
+  html += ".info-value { color: #4a9eff; font-weight: bold; }";
+  html += ".btn-group { display: flex; gap: 10px; margin-top: 20px; }";
+  html += ".btn { flex: 1; padding: 15px; border: none; border-radius: 8px; font-size: 16px; ";
+  html += "cursor: pointer; font-weight: bold; transition: transform 0.2s; }";
+  html += ".btn:hover { transform: scale(1.02); }";
+  html += ".btn-primary { background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%); color: #fff; }";
+  html += ".btn-secondary { background: linear-gradient(135deg, #ff6b6b 0%, #cc5555 100%); color: #fff; }";
+  html += ".btn-info { background: linear-gradient(135deg, #4a9eff 0%, #3377cc 100%); color: #fff; }";
+  html += ".footer { text-align: center; margin-top: 20px; color: #888; font-size: 12px; }";
+  html += "@media (max-width: 600px) { h1 { font-size: 20px; } .section { padding: 12px; } }";
+  html += "</style>";
+  html += "</head>";
+  html += "<body>";
+
+  // Cabeçalho
+  html += "<div class='container'>";
+  html += "<h1>📡 Configuração da Repetidora</h1>";
+
+  // Status do sistema
+  html += "<div class='section'>";
+  html += "<h2>⚙️ Status do Sistema</h2>";
+  html += "<div class='info'>";
+  html += "<span class='info-label'>Temperatura:</span>";
+  html += "<span class='info-value'>" + String(temperatureRead()) + "°C</span>";
+  html += "<br><br>";
+  html += "<span class='info-label'>Uptime:</span>";
+  html += "<span class='info-value'>" + String(millis() / 1000) + "s</span>";
+  html += "<br><br>";
+  html += "<span class='info-label'>Memória Livre:</span>";
+  html += "<span class='info-value'>" + String(ESP.getFreeHeap() / 1024) + " KB</span>";
+  html += "</div>";
+  html += "</div>";
+
+  // Informações Básicas
+  html += "<div class='section'>";
+  html += "<h2>📻 Informações Básicas</h2>";
+  html += "<div class='field'>";
+  html += "<label for='callsign'>Indicativo (Callsign):</label>";
+  html += "<input type='text' id='callsign' name='callsign' value='" + String(config_callsign) + "' maxlength='30'>";
+  html += "</div>";
+  html += "<div class='field'>";
+  html += "<label for='frequency'>Frequência (MHz):</label>";
+  html += "<input type='text' id='frequency' name='frequency' value='" + String(config_frequency) + "' maxlength='10'>";
+  html += "</div>";
+  html += "</div>";
+
+  // Configurações de Morse
+  html += "<div class='section'>";
+  html += "<h2>🔊 Configurações de Morse (CW)</h2>";
+  html += "<div class='field'>";
+  html += "<label for='cw_message'>Mensagem Morse (ID):</label>";
+  html += "<input type='text' id='cw_message' name='cw_message' value='" + String(config_cw_message) + "' maxlength='60'>";
+  html += "</div>";
+  html += "<div class='field'>";
+  html += "<label for='cw_wpm'>Velocidade Morse (WPM): <span id='cw_wpm_val' class='range-value'>" + String(config_cw_wpm) + "</span></label>";
+  html += "<input type='range' id='cw_wpm' name='cw_wpm' min='5' max='40' value='" + String(config_cw_wpm) + "' oninput='document.getElementById(\"cw_wpm_val\").textContent=this.value'>";
+  html += "</div>";
+  html += "<div class='field'>";
+  html += "<label for='cw_freq'>Frequência do Tom (Hz): <span id='cw_freq_val' class='range-value'>" + String(config_cw_freq) + "</span></label>";
+  html += "<input type='range' id='cw_freq' name='cw_freq' min='300' max='1200' value='" + String(config_cw_freq) + "' oninput='document.getElementById(\"cw_freq_val\").textContent=this.value'>";
+  html += "</div>";
+  html += "</div>";
+
+  // Configurações de Tempos
+  html += "<div class='section'>";
+  html += "<h2>⏱️ Configurações de Tempos</h2>";
+  html += "<div class='field'>";
+  html += "<label for='hang_time'>Hang Time (ms): <span id='hang_time_val' class='range-value'>" + String(config_hang_time) + "</span></label>";
+  html += "<input type='range' id='hang_time' name='hang_time' min='100' max='2000' value='" + String(config_hang_time) + "' oninput='document.getElementById(\"hang_time_val\").textContent=this.value'>";
+  html += "</div>";
+  html += "<div class='field'>";
+  html += "<label for='ptt_timeout'>PTT Timeout (ms): <span id='ptt_timeout_val' class='range-value'>" + String(config_ptt_timeout / 1000) + "s</span></label>";
+  html += "<input type='range' id='ptt_timeout' name='ptt_timeout' min='60000' max='600000' step='10000' value='" + String(config_ptt_timeout) + "' oninput='document.getElementById(\"ptt_timeout_val\").textContent=(this.value/1000)+\"s\"'>";
+  html += "</div>";
+  html += "<div class='field'>";
+  html += "<label for='voice_interval'>Intervalo ID Voz (min): <span id='voice_interval_val' class='range-value'>" + String(config_voice_interval / 60000) + "</span></label>";
+  html += "<input type='range' id='voice_interval' name='voice_interval' min='5' max='30' value='" + String(config_voice_interval / 60000) + "' oninput='document.getElementById(\"voice_interval_val\").textContent=this.value'>";
+  html += "</div>";
+  html += "<div class='field'>";
+  html += "<label for='cw_interval'>Intervalo ID CW (min): <span id='cw_interval_val' class='range-value'>" + String(config_cw_interval / 60000) + "</span></label>";
+  html += "<input type='range' id='cw_interval' name='cw_interval' min='5' max='30' value='" + String(config_cw_interval / 60000) + "' oninput='document.getElementById(\"cw_interval_val\").textContent=this.value'>";
+  html += "</div>";
+  html += "<div class='field'>";
+  html += "<label for='ct_change'>Troca CT a cada (QSOs): <span id='ct_change_val' class='range-value'>" + String(config_ct_change) + "</span></label>";
+  html += "<input type='range' id='ct_change' name='ct_change' min='1' max='20' value='" + String(config_ct_change) + "' oninput='document.getElementById(\"ct_change_val\").textContent=this.value'>";
+  html += "</div>";
+  html += "</div>";
+
+  // Configurações de Áudio
+  html += "<div class='section'>";
+  html += "<h2>🎵 Configurações de Áudio</h2>";
+  html += "<div class='field'>";
+  html += "<label for='volume'>Volume: <span id='volume_val' class='range-value'>" + String(config_volume * 100) + "%</span></label>";
+  html += "<input type='range' id='volume' name='volume' min='0' max='100' value='" + String(config_volume * 100) + "' oninput='document.getElementById(\"volume_val\").textContent=this.value+\"%\"'>";
+  html += "</div>";
+  html += "<div class='field'>";
+  html += "<label for='sample_rate'>Sample Rate (Hz):</label>";
+  html += "<select id='sample_rate' name='sample_rate'>";
+  html += "<option value='8000' " + String(config_sample_rate == 8000 ? "selected" : "") + ">8000 Hz</option>";
+  html += "<option value='11025' " + String(config_sample_rate == 11025 ? "selected" : "") + ">11025 Hz</option>";
+  html += "<option value='16000' " + String(config_sample_rate == 16000 ? "selected" : "") + ">16000 Hz</option>";
+  html += "<option value='22050' " + String(config_sample_rate == 22050 ? "selected" : "") + ">22050 Hz</option>";
+  html += "<option value='44100' " + String(config_sample_rate == 44100 ? "selected" : "") + ">44100 Hz</option>";
+  html += "</select>";
+  html += "</div>";
+  html += "</div>";
+
+  // Configurações de Courtesy Tone
+  html += "<div class='section'>";
+  html += "<h2>🔔 Courtesy Tone (CT)</h2>";
+  html += "<div class='field'>";
+  html += "<label for='ct_index'>Selecione o Courtesy Tone:</label>";
+  html += "<select id='ct_index' name='ct_index'>";
+
+  // Gera lista dos 33 CTs
+  for (int i = 0; i < N_CT; i++) {
+    html += "<option value='" + String(i) + "' " + String(ct_index == i ? "selected" : "") + ">";
+    html += String(tones[i].name) + " (" + String(i + 1) + "/33)";
+    html += "</option>";
+  }
+
+  html += "</select>";
+  html += "</div>";
+  html += "</div>";
+
+  // Configurações de Debug
+  html += "<div class='section'>";
+  html += "<h2>🐛 Configurações de Debug</h2>";
+  html += "<div class='field'>";
+  html += "<label for='debug_level'>Nível de Debug:</label>";
+  html += "<select id='debug_level' name='debug_level'>";
+  html += "<option value='0' " + String(config_debug_level == 0 ? "selected" : "") + ">0 - NONE (apenas erros)</option>";
+  html += "<option value='1' " + String(config_debug_level == 1 ? "selected" : "") + ">1 - MINIMAL (eventos principais)</option>";
+  html += "<option value='2' " + String(config_debug_level == 2 ? "selected" : "") + ">2 - NORMAL (debug padrão)</option>";
+  html += "<option value='3' " + String(config_debug_level == 3 ? "selected" : "") + ">3 - VERBOSE (detalhado)</option>";
+  html += "</select>";
+  html += "</div>";
+  html += "</div>";
+
+  // Botões de ação
+  html += "<div class='btn-group'>";
+  html += "<button type='button' class='btn btn-primary' onclick='saveConfig()'>💾 Salvar e Reiniciar</button>";
+  html += "</div>";
+
+  html += "<div class='btn-group'>";
+  html += "<button type='button' class='btn btn-secondary' onclick='restartDevice()'>🔄 Reiniciar Dispositivo</button>";
+  html += "<button type='button' class='btn btn-info' onclick='toggleDebug()'>📋 Ver Console Debug</button>";
+  html += "</div>";
+
+  html += "<div class='btn-group'>";
+  html += "<button type='button' class='btn btn-secondary' style='background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%);' onclick='resetFactory()'>⚠️ Reset de Fábrica</button>";
+  html += "</div>";
+
+  // Área de debug (oculta por padrão)
+  html += "<div id='debug_area' class='section' style='display:none;'>";
+  html += "<h2>📋 Console de Debug</h2>";
+  html += "<textarea id='debug_console' rows='15' readonly style='font-family: monospace; font-size: 12px;'>";
+  html += "Console de debug em desenvolvimento...";
+  html += "</textarea>";
+  html += "</div>";
+
+  // Footer
+  html += "<div class='footer'>";
+  html += "Repetidora ESP32-2432S028R - Versão 2.3";
+  html += "</div>";
+
+  html += "</div>"; // container
+
+  // Script JavaScript
+  html += "<script>";
+  html += "function saveConfig() {";
+  html += "  var data = new FormData(document);";
+  html += "  data.append('action', 'save');";
+  html += "  if(confirm('Deseja salvar as configurações e reiniciar o dispositivo?')) {";
+  html += "    fetch('/save', { method: 'POST', body: data })";
+  html += "      .then(response => response.text())";
+  html += "      .then(data => { alert(data); setTimeout(() => location.reload(), 3000); })";
+  html += "      .catch(error => alert('Erro ao salvar: ' + error));";
+  html += "  }";
+  html += "}";
+  html += "function restartDevice() {";
+  html += "  if(confirm('Tem certeza que deseja reiniciar o dispositivo?')) {";
+  html += "    fetch('/restart', { method: 'POST' })";
+  html += "      .then(response => response.text())";
+  html += "      .then(data => { alert(data); setTimeout(() => location.reload(), 3000); })";
+  html += "      .catch(error => alert('Erro ao reiniciar: ' + error));";
+  html += "  }";
+  html += "}";
+  html += "function resetFactory() {";
+  html += "  if(confirm('ATENÇÃO: Isso apagará TODAS as configurações e restaurará os valores de fábrica.\\n\\nTem certeza que deseja continuar?')) {";
+  html += "    fetch('/reset_factory', { method: 'POST' })";
+  html += "      .then(response => response.text())";
+  html += "      .then(data => { alert(data); setTimeout(() => location.reload(), 3000); })";
+  html += "      .catch(error => alert('Erro ao fazer reset: ' + error));";
+  html += "  }";
+  html += "}";
+  html += "function toggleDebug() {";
+  html += "  var debug = document.getElementById('debug_area');";
+  html += "  debug.style.display = debug.style.display === 'none' ? 'block' : 'none';";
+  html += "  if(debug.style.display === 'block') { fetchDebug(); }";
+  html += "}";
+  html += "function fetchDebug() {";
+  html += "  fetch('/debug')";
+  html += "    .then(response => response.text())";
+  html += "    .then(data => { document.getElementById('debug_console').value = data; })";
+  html += "    .catch(error => console.error('Erro ao carregar debug:', error));";
+  html += "  if(document.getElementById('debug_area').style.display === 'block') {";
+  html += "    setTimeout(fetchDebug, 2000);";
+  html += "  }";
+  html += "}";
+  html += "</script>";
+
+  html += "</body>";
+  html += "</html>";
+
+  return html;
+}
+
+/**
+ * @brief Gera página de sucesso
+ */
+String getSuccessPage(const String& message) {
+  String html = "<!DOCTYPE html><html lang='pt-BR'><head>";
+  html += "<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>";
+  html += "<title>Sucesso</title>";
+  html += "<style>body{font-family:sans-serif;background:linear-gradient(135deg,#1a1a2e,#16213e);";
+  html += "color:#fff;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}";
+  html += ".container{text-align:center;padding:40px;background:rgba(255,255,255,0.1);";
+  html += "border-radius:15px;box-shadow:0 4px 20px rgba(0,0,0,0.3);}";
+  html += "h1{color:#4a9eff;margin-bottom:20px;}p{color:#aaa;margin-bottom:30px;}";
+  html += ".btn{display:inline-block;padding:15px 30px;background:linear-gradient(135deg,#00d4ff,#0099cc);";
+  html += "color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;}</style></head><body>";
+  html += "<div class='container'><h1>✅ Sucesso!</h1><p>" + message + "</p>";
+  html += "<a href='/' class='btn'>Voltar</a></div></body></html>";
+  return html;
+}
+
+/**
+ * @brief Inicializa o servidor web com todas as rotas
+ *
+ * Configura o servidor web para responder às requisições HTTP:
+ * - GET /: Página de configuração
+ * - POST /save: Salvar configurações e reiniciar
+ * - POST /restart: Reiniciar o dispositivo
+ * - POST /reset_factory: Reset de fábrica
+ * - GET /debug: Obter logs de debug
+ */
+void initWebServer() {
+  Serial.println("Inicializando servidor web...");
+
+  // Rota principal - página de configuração
+  server.on("/", HTTP_GET, []() {
+    server.send(200, "text/html", generateConfigPage());
+  });
+
+  // Rota para salvar configurações e reiniciar
+  server.on("/save", HTTP_POST, []() {
+    Serial.println("Recebida requisição de salvar configurações...");
+
+    // Processa cada campo do formulário
+    if (server.hasArg("callsign")) {
+      String value = server.arg("callsign");
+      value.toCharArray(config_callsign, sizeof(config_callsign));
+      Serial.printf("Callsign: %s\n", config_callsign);
+    }
+
+    if (server.hasArg("frequency")) {
+      String value = server.arg("frequency");
+      value.toCharArray(config_frequency, sizeof(config_frequency));
+      Serial.printf("Frequência: %s\n", config_frequency);
+    }
+
+    if (server.hasArg("cw_message")) {
+      String value = server.arg("cw_message");
+      value.toCharArray(config_cw_message, sizeof(config_cw_message));
+      Serial.printf("Mensagem CW: %s\n", config_cw_message);
+    }
+
+    if (server.hasArg("cw_wpm")) {
+      config_cw_wpm = server.arg("cw_wpm").toInt();
+      Serial.printf("CW WPM: %u\n", config_cw_wpm);
+    }
+
+    if (server.hasArg("cw_freq")) {
+      config_cw_freq = server.arg("cw_freq").toInt();
+      Serial.printf("CW Freq: %u Hz\n", config_cw_freq);
+    }
+
+    if (server.hasArg("hang_time")) {
+      config_hang_time = server.arg("hang_time").toInt();
+      Serial.printf("Hang Time: %lu ms\n", config_hang_time);
+    }
+
+    if (server.hasArg("ptt_timeout")) {
+      config_ptt_timeout = server.arg("ptt_timeout").toInt();
+      Serial.printf("PTT Timeout: %lu ms\n", config_ptt_timeout);
+    }
+
+    if (server.hasArg("voice_interval")) {
+      config_voice_interval = server.arg("voice_interval").toInt() * 60000; // converte minutos para ms
+      Serial.printf("Voice Interval: %lu ms\n", config_voice_interval);
+    }
+
+    if (server.hasArg("cw_interval")) {
+      config_cw_interval = server.arg("cw_interval").toInt() * 60000; // converte minutos para ms
+      Serial.printf("CW Interval: %lu ms\n", config_cw_interval);
+    }
+
+    if (server.hasArg("ct_change")) {
+      config_ct_change = server.arg("ct_change").toInt();
+      Serial.printf("CT Change: %lu QSOs\n", config_ct_change);
+    }
+
+    if (server.hasArg("ct_index")) {
+      config_ct_index = server.arg("ct_index").toInt();
+      ct_index = config_ct_index;
+      Serial.printf("CT Index: %d\n", config_ct_index);
+    }
+
+    if (server.hasArg("volume")) {
+      config_volume = server.arg("volume").toFloat() / 100.0f; // converte para 0-1
+      Serial.printf("Volume: %.2f\n", config_volume);
+    }
+
+    if (server.hasArg("sample_rate")) {
+      config_sample_rate = server.arg("sample_rate").toInt();
+      Serial.printf("Sample Rate: %u Hz\n", config_sample_rate);
+    }
+
+    if (server.hasArg("debug_level")) {
+      config_debug_level = server.arg("debug_level").toInt();
+      DEBUG_LEVEL = config_debug_level;
+      Serial.printf("Debug Level: %d\n", config_debug_level);
+    }
+
+    // Salva as configurações no Preferences
+    savePreferences();
+
+    // Atualiza as variáveis globais
+    CALLSIGN = config_callsign;
+    VOLUME = config_volume;
+
+    // Responde com página de sucesso e reinicia
+    server.send(200, "text/html", getSuccessPage("Configurações salvas! Reiniciando o dispositivo..."));
+    delay(2000);
+    ESP.restart();
+  });
+
+  // Rota para reiniciar o dispositivo
+  server.on("/restart", HTTP_POST, []() {
+    Serial.println("Recebida requisição de reinício...");
+    savePreferences(); // Salva antes de reiniciar
+    server.send(200, "text/html", getSuccessPage("Dispositivo será reiniciado em 3 segundos..."));
+    delay(3000);
+    ESP.restart();
+  });
+
+  // Rota para reset de fábrica
+  server.on("/reset_factory", HTTP_POST, []() {
+    Serial.println("=== RESET DE FÁBRICA ===");
+    preferences.begin("config", false);
+    preferences.clear(); // Apaga todas as configurações
+    preferences.end();
+    server.send(200, "text/html", getSuccessPage("Reset de fábrica realizado! Reiniciando..."));
+    delay(2000);
+    ESP.restart();
+  });
+
+  // Rota para obter logs de debug
+  server.on("/debug", HTTP_GET, []() {
+    if (LittleFS.exists("/debug.log")) {
+      File file = LittleFS.open("/debug.log", FILE_READ);
+      if (file) {
+        String content = file.readString();
+        file.close();
+        server.send(200, "text/plain", content);
+        return;
+      }
+    }
+    server.send(200, "text/plain", "Nenhum log de debug disponível.");
+  });
+
+  // Inicia o servidor
+  server.begin();
+  Serial.println("Servidor web iniciado com sucesso!");
+  Serial.printf("Acesse: http://%s/\n", WiFi.softAPIP().toString().c_str());
+}
+
+/**
+ * @brief Inicia WiFi AP no boot (sempre ativo)
+ */
+void initWiFiAP() {
+  Serial.println("Iniciando WiFi AP...");
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(AP_SSID, AP_PASSWORD);
+  Serial.printf("AP: %s\n", AP_SSID);
+  Serial.printf("IP: %s\n", WiFi.softAPIP().toString().c_str());
+}
 
 // ====================== AUDIO ========================
 
@@ -1076,14 +1740,26 @@ void updateDisplay() {
       tft.fillRect(0, 0, W, header_height, TFT_DARKBLUE);  // Limpa header
       tft.drawRoundRect(0, 0, W, header_height, 5, TFT_WHITE);  // Borda branca
 
-      // Callsign centralizado e bem posicionado
-      tft.setTextColor(TFT_YELLOW, TFT_DARKBLUE);
-      tft.setTextSize(4);
-      int16_t textW = tft.textWidth(CALLSIGN);
-      int16_t text_x = (W - textW) / 2;
-      int16_t text_y = (header_height - 24) / 2;  // Centraliza verticalmente
-      tft.setCursor(text_x, text_y);
-      tft.print(CALLSIGN);
+      if (!show_ip_screen) {
+        // Em modo normal, mostra callsign e frequência
+        // Callsign (linha superior)
+        tft.setTextColor(TFT_YELLOW, TFT_DARKBLUE);
+        tft.setTextSize(3);
+        int16_t textW = tft.textWidth(CALLSIGN);
+        int16_t text_x = (W - textW) / 2;
+        tft.setCursor(text_x, 5);
+        tft.print(CALLSIGN);
+
+        // Frequência (linha inferior, centralizada)
+        tft.setTextColor(TFT_CYAN, TFT_DARKBLUE);
+        tft.setTextSize(2);
+        char freq_str[20];
+        snprintf(freq_str, sizeof(freq_str), "%s MHz", config_frequency);
+        int16_t freqW = tft.textWidth(freq_str);
+        int16_t freq_x = (W - freqW) / 2;
+        tft.setCursor(freq_x, 35);
+        tft.print(freq_str);
+      }
 
       // Linha separadora
       tft.drawFastHLine(5, header_height, W - 10, TFT_DARKGREY);
@@ -1096,7 +1772,19 @@ void updateDisplay() {
     const char* status_subtext = "";
     
     // Determina estado e texto baseado no modo de transmissão
-    if (tx_mode == TX_VOICE) {
+    if (show_ip_screen) {
+      // MOSTRAR IP (BOOT button pressionado)
+      status_bg = TFT_CYAN;
+      status_text_color = TFT_BLACK;
+      status_text = "WIFI AP ATIVO";
+      status_subtext = WiFi.softAPIP().toString().c_str();
+    } else if (configMode) {
+      // MODO DE CONFIGURAÇÃO - Mostra status WiFi
+      status_bg = TFT_CYAN;
+      status_text_color = TFT_BLACK;
+      status_text = "MODO CONFIG";
+      status_subtext = WiFi.softAPIP().toString().c_str();
+    } else if (tx_mode == TX_VOICE) {
       status_bg = TFT_RED;
       status_text_color = TFT_WHITE;
       status_text = "TX VOZ";
@@ -1511,7 +2199,9 @@ void setup() {
   pinMode(PIN_COR, INPUT);  // INPUT (sem pullup) - conforme código original
   pinMode(PIN_PTT, OUTPUT);
   digitalWrite(PIN_PTT, LOW);
-  Serial.printf("GPIOs configurados - COR: GPIO%d, PTT: GPIO%d\n", PIN_COR, PIN_PTT);
+  pinMode(PIN_BOOT, INPUT_PULLUP);  // BOOT button com pullup interno
+  Serial.printf("GPIOs configurados - COR: GPIO%d, PTT: GPIO%d, BOOT: GPIO%d\n",
+              PIN_COR, PIN_PTT, PIN_BOOT);
   Serial.printf("Speaker: GPIO%d\n", SPEAKER_PIN);
 
   // ========== CONFIGURAÇÃO DO LED RGB ==========
@@ -1558,6 +2248,15 @@ void setup() {
   logToFile("D", "SETUP_COMPLETE", millis(), ESP.getFreeHeap(), ESP.getHeapSize(), 0);
   Serial.printf("Setup finalizado - Heap livre: %d / %d bytes\n", ESP.getFreeHeap(), ESP.getHeapSize());
   // #endregion
+
+  // Carrega configurações salvas do Preferences
+  loadPreferences();
+
+  // Inicia WiFi AP (sempre ativo para configuração)
+  initWiFiAP();
+
+  // Inicializa o servidor web
+  initWebServer();
 
   // Marca tempo de boot para identificação inicial
   boot_time = millis();
@@ -1725,17 +2424,75 @@ void loop() {
     ptt_locked = true;
   }
 
-  // ========== CONTROLE DE TOUCHSCREEN ==========
-  // Verifica se houve toque na tela
-  if (ts.touched()) {
+  // ========== CONTROLE DE BOOT BUTTON (GPIO 0) ==========
+  // Lê o estado do BOOT button (LOW = pressionado)
+  bool boot_pressed = (digitalRead(PIN_BOOT) == LOW);
+
+  if (boot_pressed && !boot_button_pressed) {
+    // Botão acaba de ser pressionado
+    boot_button_pressed = true;
+    boot_button_start = millis();
+    show_ip_screen = true;
+    needsFullRedraw = true;
+    Serial.println("BOOT button pressionado - Mostrando IP na tela");
+  } else if (!boot_pressed && boot_button_pressed) {
+    // Botão foi solto
+    boot_button_pressed = false;
+
+    // Verifica se foi pressionado por mais de 5 segundos = RESET DE FÁBRICA
+    if (millis() - boot_button_start >= RESET_FACTORY_MS) {
+      Serial.println("=== RESET DE FÁBRICA SOLICITADO ===");
+      preferences.begin("config", false);
+      preferences.clear(); // Apaga todas as configurações
+      preferences.end();
+      Serial.println("Configurações apagadas - Reiniciando...");
+      delay(1000);
+      ESP.restart();
+    } else {
+      // Foi um toque normal - volta para tela normal
+      show_ip_screen = false;
+      needsFullRedraw = true;
+      Serial.println("BOOT button solto - Voltando para tela normal");
+    }
+  }
+
+  // Se o BOOT button continuar pressionado, verifica tempo para reset
+  if (boot_pressed && boot_button_pressed &&
+      millis() - boot_button_start >= RESET_FACTORY_MS) {
+    // Mostra alerta de reset na tela
+    static bool reset_warning_shown = false;
+    if (!reset_warning_shown) {
+      tft.fillScreen(TFT_RED);
+      tft.setTextColor(TFT_WHITE, TFT_RED);
+      tft.setTextSize(2);
+      tft.setCursor(50, 100);
+      tft.println("ATENCAO!");
+      tft.setCursor(30, 130);
+      tft.println("SOLTAR PARA");
+      tft.setCursor(30, 160);
+      tft.println("RESET DE FABRICA");
+      reset_warning_shown = true;
+    }
+  } else {
+    // Reseta flag de warning se não está em reset
+    static bool reset_warning_shown = false;
+    reset_warning_shown = false;
+  }
+
+  // ========== CONTROLE DE TOUCHSCREEN (MODO NORMAL) ==========
+  if (!show_ip_screen && ts.touched()) {
     TS_Point p = ts.getPoint();
 
     // Filtra touch com coordenadas inválidas (valores muito altos indicam touch falso)
     if (p.z > 600 && p.x < 8000 && p.y < 8000) {
       // Avança para o próximo courtesy tone (circular)
       ct_index = (ct_index + 1) % N_CT;
-      needsFullRedraw = true;  // Marca para redraw completo
-      updateDisplay();          // Atualiza display mostrando novo CT
+      config_ct_index = ct_index;  // Atualiza config também
+      needsFullRedraw = true;
+      updateDisplay();
+
+      Serial.printf("Touch - Novo CT: %s (%d/33)\n",
+                   tones[ct_index].name, ct_index + 1);
 
       // Debounce: Delay para evitar troca rápida acidental
       delay(500);
@@ -1746,6 +2503,9 @@ void loop() {
       }
     }
   }
+
+  // ========== PROCESSA REQUISIÇÕES DO SERVIDOR WEB (sempre ativo) ==========
+  server.handleClient();
   
   // ========== ATUALIZAÇÃO DE UPTIME ==========
   // Atualiza o uptime a cada 5 segundos SEM redesenhar tela inteira
