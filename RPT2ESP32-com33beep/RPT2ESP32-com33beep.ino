@@ -197,6 +197,7 @@ const char* CALLSIGN = "PY2KEP SP";
 #define WDT_TIMEOUT_SECONDS 30
 #define SAMPLE_RATE 22050
 #define HANG_TIME_MS 600
+#define PTT_TIMEOUT_MS 4UL*60UL*1000UL  // 4 minutos de timeout
 float VOLUME = 0.70f;
 
 // Constantes para CW (Morse)
@@ -213,6 +214,11 @@ bool cor_stable = false;
 bool ptt_state  = false;
 bool playing    = false;
 bool i2s_ok     = false;
+bool last_cor = false;  // Para debounce do COR
+unsigned long last_change = 0;  // Para debounce do COR
+const uint32_t COR_DEBOUNCE_MS = 350;  // Tempo de debounce (350ms)
+bool ptt_locked = false;  // Flag para bloquear PTT após timeout
+unsigned long ptt_activated_at = 0;  // Timestamp quando PTT foi ativado (para timeout)
 
 uint16_t qso_count = 0;
 uint8_t  ct_index  = 0;
@@ -739,6 +745,41 @@ void playCW(const String &txt) {
   Serial.println("Reprodução CW concluída");
 }
 
+// ====================== CONTROLE DO PTT ========================
+
+/**
+ * @brief Ativa ou desativa o PTT (Push-to-Talk)
+ *
+ * Esta função controla o pino PTT do rádio TX, gerenciando
+ * o estado e registrando o timestamp de ativação para controle
+ * de timeout de 4 minutos.
+ *
+ * @param on true para ativar PTT, false para desativar
+ *
+ * Comportamento:
+ * - Se on == ptt_state: Não faz nada (evita redundância)
+ * - Ativa: Seta ptt_state, HIGH no pino, registra timestamp
+ * - Desativa: Seta ptt_state, LOW no pino
+ *
+ * @see loop() onde o timeout de 4 minutos é verificado
+ */
+void setPTT(bool on) {
+  // Se o estado já é o mesmo, não faz nada
+  if (on == ptt_state) return;
+
+  // Atualiza estado
+  ptt_state = on;
+
+  // Controla o pino físico
+  digitalWrite(PIN_PTT, on ? HIGH : LOW);
+
+  // Log e timestamp
+  Serial.println(on ? "PTT ON" : "PTT OFF");
+  if (on) {
+    ptt_activated_at = millis();  // Registra quando foi ativado (para timeout)
+  }
+}
+
 // ====================== LED RGB ========================
 
 // Função setColorFromHue() removida - não é mais necessária
@@ -990,22 +1031,29 @@ void updateDisplay() {
       Serial.printf("updateDisplay() - Renderização completa - W=%d, H=%d\n", W, H);
     }
     
-    // ========== HEADER - Redesenha SEMPRE para sincronizar (evita flash/separado) ==========
+    // ========== HEADER - Redesenha apenas quando mudou ==========
     int16_t header_height = 60;
-    tft.fillRect(0, 0, W, header_height, TFT_DARKBLUE);  // Relimpa SÓ header
-    tft.drawRoundRect(0, 0, W, header_height, 5, TFT_WHITE);  // Borda branca
-    
-    // Callsign centralizado e bem posicionado (redesenha sempre)
-    tft.setTextColor(TFT_YELLOW, TFT_DARKBLUE);
-    tft.setTextSize(4);
-    int16_t textW = tft.textWidth(CALLSIGN);
-    int16_t text_x = (W - textW) / 2;
-    int16_t text_y = (header_height - 24) / 2;  // Centraliza verticalmente
-    tft.setCursor(text_x, text_y);
-    tft.print(CALLSIGN);  // Redesenha sempre junto
-    
-    // Linha separadora
-    tft.drawFastHLine(5, header_height, W - 10, TFT_DARKGREY);
+    static bool header_drawn = false;
+
+    // Só redesenha header se: primeira vez OU redraw completo forçado
+    // O callsign NÃO muda durante operação normal, então não precisa redesenhar sempre
+    if (!header_drawn || isFullRedraw) {
+      tft.fillRect(0, 0, W, header_height, TFT_DARKBLUE);  // Limpa header
+      tft.drawRoundRect(0, 0, W, header_height, 5, TFT_WHITE);  // Borda branca
+
+      // Callsign centralizado e bem posicionado
+      tft.setTextColor(TFT_YELLOW, TFT_DARKBLUE);
+      tft.setTextSize(4);
+      int16_t textW = tft.textWidth(CALLSIGN);
+      int16_t text_x = (W - textW) / 2;
+      int16_t text_y = (header_height - 24) / 2;  // Centraliza verticalmente
+      tft.setCursor(text_x, text_y);
+      tft.print(CALLSIGN);
+
+      // Linha separadora
+      tft.drawFastHLine(5, header_height, W - 10, TFT_DARKGREY);
+      header_drawn = true;
+    }
     
     // ========== STATUS PRINCIPAL (Centro, caixa grande) ==========
     uint16_t status_bg, status_text_color;
@@ -1417,7 +1465,7 @@ void setup() {
   ts.begin();
   Serial.println("Touchscreen inicializado");
 
-  pinMode(PIN_COR, INPUT_PULLUP);
+  pinMode(PIN_COR, INPUT);  // INPUT (sem pullup) - conforme código original
   pinMode(PIN_PTT, OUTPUT);
   digitalWrite(PIN_PTT, LOW);
   Serial.printf("GPIOs configurados - COR: GPIO%d, PTT: GPIO%d\n", PIN_COR, PIN_PTT);
@@ -1558,9 +1606,9 @@ void loop() {
   // #endregion
 
   // ========== CONTROLE DE COR (SQUELCH DETECTION) ==========
-  // Lê o pino COR (LOW = sinal detectado)
-  bool cor = (digitalRead(PIN_COR) == LOW);
-  
+  // Lê o pino COR (HIGH = sinal detectado - conforme código original)
+  bool cor = (digitalRead(PIN_COR) == HIGH);
+
   // Debug: Verifica estado do PTT periodicamente
   static unsigned long last_ptt_debug = 0;
   if (millis() - last_ptt_debug >= 2000) {  // A cada 2 segundos
@@ -1570,37 +1618,43 @@ void loop() {
                   ptt_state, ptt_pin_state, cor, cor_stable, tx_mode);
   }
 
-  // Se o estado do COR mudou, trata a transição
-  if (cor != cor_stable) {
+  // SISTEMA DE DEBOUNCE PARA COR (conforme código original)
+  if (cor != last_cor) {
+    // Estado mudou - registra momento da mudança
+    last_cor = cor;
+    last_change = millis();
+  } else if (millis() - last_change >= COR_DEBOUNCE_MS && cor != cor_stable) {
+    // Após 350ms de estado estável e diferente do estado atual, atualiza
     // #region agent log
     logToFile("B", "COR_CHANGED", millis(), cor, cor_stable, ESP.getFreeHeap());
-    Serial.printf("COR mudou: %d -> %d\n", cor_stable, cor);
+    Serial.printf("COR mudou: %d -> %d (após %lums estável)\n", cor_stable, cor, millis() - last_change);
     // #endregion
     cor_stable = cor;
     needsFullRedraw = true;  // Marca para redraw completo
 
-    if (cor_stable) {
-      // COR ativado → INÍCIO DO QSO → PTT ON
-      ptt_state = true;
-      digitalWrite(PIN_PTT, HIGH);  // Ativa transmissão
-      Serial.printf("PTT ATIVADO: PIN_PTT=%d (HIGH)\n", digitalRead(PIN_PTT));
-    } else {
+    if (cor_stable && !ptt_locked) {
+      // COR ativado → INÍCIO DO QSO → PTT ON (usando setPTT)
+      setPTT(true);
+    } else if (!cor_stable && ptt_state && !ptt_locked) {
       // COR desativado → FIM DO QSO → HANG TIME → CT → PTT OFF
       delay(HANG_TIME_MS);  // Aguarda hang time (600ms)
       if (!playing) {
         playCT();  // Reproduz courtesy tone selecionado
       }
-      digitalWrite(PIN_PTT, LOW);  // Desativa transmissão
-      ptt_state = false;
-      Serial.printf("PTT DESATIVADO: PIN_PTT=%d (LOW)\n", digitalRead(PIN_PTT));
-      qso_count++;  // Incrementa contador de QSOs
+      setPTT(false);
 
       // Troca automática do CT a cada 5 QSOs (código original)
-      if (qso_count % QSO_CT_CHANGE == 0) {
+      if (qso_count % 5 == 0) {
         ct_index = (ct_index + 1) % N_CT;
         Serial.printf("*** Novo Courtesy Tone: %s (CT %02d/33) ***\n", tones[ct_index].name, ct_index + 1);
         needsFullRedraw = true;  // Marca para atualizar display com novo CT
       }
+    }
+
+    // Libera lock do PTT se a COR caiu
+    if (ptt_locked && !cor_stable) {
+      ptt_locked = false;
+      Serial.println("Lock liberado após queda de COR");
     }
 
     // Atualiza display após mudança de estado
@@ -1611,6 +1665,14 @@ void loop() {
     // #region agent log
     logToFile("C", "AFTER_UPDATE_DISPLAY", millis(), ESP.getFreeHeap(), 0, 0);
     // #endregion
+  }
+
+  // ========== TIMEOUT DE PTT (4 MINUTOS) ==========
+  // Se o PTT ficar ativo por 4 minutos, bloqueia para evitar travamentos
+  if (ptt_state && !ptt_locked && millis() - ptt_activated_at >= PTT_TIMEOUT_MS) {
+    Serial.println("TIMEOUT 4min - PTT bloqueado");
+    setPTT(false);
+    ptt_locked = true;
   }
 
   // ========== CONTROLE DE TOUCHSCREEN ==========
@@ -1646,33 +1708,10 @@ void loop() {
     // #endregion
 
     updateUptimeOnly();  // Atualiza APENAS o uptime, sem redesenhar tela
-    
-    // FORÇA atualização do display se está em modo "EM ESCUTA" para garantir visibilidade
-    // Isso garante que a tela verde não desapareça
-    if (!ptt_state && !cor_stable && tx_mode == TX_NONE) {
-      needsFullRedraw = true;
-      last_display_update = 0;  // Reseta throttle para forçar atualização
-      updateDisplay();
-      Serial.println("FORÇANDO UPDATE DISPLAY: Modo EM ESCUTA (verde)");
-    }
+    // NOTA: Displays LCD não precisam de refresh periódico - a imagem permanece estática
+    // até que seja alterada por uma mudança de estado (COR, PTT, TX)
   }
   
-  // ========== ATUALIZAÇÃO PERIÓDICA DO DISPLAY ==========
-  // Garante que o display seja atualizado periodicamente mesmo sem mudanças de estado
-  // Isso previne que a tela verde "EM ESCUTA" desapareça
-  static unsigned long last_periodic_display_update = 0;
-  if (currentMillis - last_periodic_display_update >= 10000) {  // A cada 10 segundos
-    last_periodic_display_update = currentMillis;
-    
-    // Se está em modo "EM ESCUTA", força atualização do display
-    if (!ptt_state && !cor_stable && tx_mode == TX_NONE) {
-      needsFullRedraw = true;
-      last_display_update = 0;  // Reseta throttle
-      updateDisplay();
-      Serial.println("UPDATE PERIÓDICO DISPLAY: Mantendo tela verde visível");
-    }
-  }
-
   // ========== CONTROLE DO LED RGB ==========
   updateLED();  // Atualiza LED baseado no status (TX/RX/Idle)
   // Nota: Rainbow foi removido - LED agora usa cores fixas correspondentes ao display
