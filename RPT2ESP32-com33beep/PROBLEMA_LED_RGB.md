@@ -1,7 +1,100 @@
-# Problema: LED RGB ESP32-2432S028R - Todas as cores acesas simultaneamente
+# Problema: LED RGB ESP32-2432S028R - Status do Progresso
 
-## Descrição do Problema
-O LED RGB na placa ESP32-2432S028R (Cheap Yellow Display) está mostrando todas as cores (vermelho, verde e azul) acesas ao mesmo tempo, independentemente do estado do sistema. O LED não muda de cor conforme esperado.
+## 📋 Status Atual: PARCIALMENTE RESOLVIDO ✅⚠️
+
+**Data:** 30 de Dezembro de 2025
+**Versão do Código:** v2.3
+
+## ✅ O Que Está Funcionando
+
+1. **LED INICIA CORRETAMENTE**: O LED agora inicia completamente apagado (sem flash branco no boot)
+2. **COR VERDE (IDLE)**: Funciona perfeitamente quando a repetidora está em escuta
+3. **COR AZUL (WIFI)**: Funciona quando a tela de Wi-Fi está ativa (botão Wi-Fi pressionado)
+
+## ⚠️ O Que Ainda Precisa Ser Investigado
+
+1. **COR VERMELHA (TX)**: O LED NÃO está ficando vermelho durante:
+   - Transmissão em Morse (TX_CW)
+   - Transmissão em Voz (TX_VOICE)
+   - Qualquer tipo de TX
+
+## 🔍 Diagnóstico em Andamento
+
+### Soluções Aplicadas até agora:
+
+#### ✅ Solução 1: Mudança de PWM para digitalWrite()
+**Status:** Funcional para estados IDLE e WIFI
+
+**Problema Resolvido:**
+- Antes: LED iniciava com todas as cores acesas (branco) devido ao PWM começar com duty cycle 0 (LOW)
+- Agora: LED inicia apagado usando `digitalWrite(HIGH)`
+
+**Código Implementado:**
+```cpp
+// Configuração (no setup)
+pinMode(PIN_LED_R, OUTPUT);
+pinMode(PIN_LED_G, OUTPUT);
+pinMode(PIN_LED_B, OUTPUT);
+digitalWrite(PIN_LED_R, HIGH);  // Apaga Vermelho
+digitalWrite(PIN_LED_G, HIGH);  // Apaga Verde
+digitalWrite(PIN_LED_B, HIGH);  // Apaga Azul
+
+// Função updateLED()
+void updateLED() {
+  if (show_ip_screen) {
+    // Azul (WIFI)
+    digitalWrite(PIN_LED_R, HIGH);
+    digitalWrite(PIN_LED_G, HIGH);
+    digitalWrite(PIN_LED_B, LOW);
+  }
+  else if (tx_mode != TX_NONE || ptt_state) {
+    // Vermelho (TX) - ESTA PARTE NÃO ESTÁ FUNCIONANDO
+    digitalWrite(PIN_LED_R, LOW);
+    digitalWrite(PIN_LED_G, HIGH);
+    digitalWrite(PIN_LED_B, HIGH);
+  }
+  else if (cor_stable) {
+    // Amarelo (RX)
+    digitalWrite(PIN_LED_R, LOW);
+    digitalWrite(PIN_LED_G, LOW);
+    digitalWrite(PIN_LED_B, HIGH);
+  }
+  else {
+    // Verde (IDLE) - FUNCIONANDO
+    digitalWrite(PIN_LED_R, HIGH);
+    digitalWrite(PIN_LED_G, LOW);
+    digitalWrite(PIN_LED_B, HIGH);
+  }
+}
+```
+
+### Próximo Passo: Adicionar Debug Logs
+
+Adicionei logs na função `updateLED()` para investigar por que não está entrando no estado TX:
+
+```cpp
+Serial.printf("[LED] Estado: %s | tx_mode=%d, ptt_state=%d, cor_stable=%d, show_ip_screen=%d\n",
+              current_state == 1 ? "AZUL (WIFI)" :
+              current_state == 2 ? "VERMELHO (TX)" :
+              current_state == 3 ? "AMARELO (RX)" : "VERDE (IDLE)",
+              tx_mode, ptt_state, cor_stable, show_ip_screen);
+```
+
+## 🎯 Hipóteses para Investigar
+
+1. **tx_mode não está sendo definido durante TX?**
+   - Verificar se `tx_mode = TX_VOICE` e `tx_mode = TX_CW` estão sendo executados
+
+2. **ptt_state não está sendo ativado?**
+   - Verificar se `setPTT(true)` está sendo chamado durante TX
+
+3. **Condição `else if` não está sendo avaliada corretamente?**
+   - Possível problema de prioridade com outras condições
+
+4. **Variáveis globais não estão sendo atualizadas?**
+   - tx_mode pode estar sendo resetado antes da checagem do LED
+
+## 📝 Especificações do Hardware (conforme documentação)
 
 ## Especificações do Hardware (conforme documentação)
 

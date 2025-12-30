@@ -608,8 +608,10 @@ String generateConfigPage() {
   html += ".btn-primary { background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%); color: #fff; }";
   html += ".btn-secondary { background: linear-gradient(135deg, #ff6b6b 0%, #cc5555 100%); color: #fff; }";
   html += ".btn-info { background: linear-gradient(135deg, #4a9eff 0%, #3377cc 100%); color: #fff; }";
+  html += "#langBtn:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6); background: linear-gradient(135deg, #764ba2 0%, #667eea 100%); }";
+  html += "#langBtn:active { transform: scale(0.98); }";
   html += ".footer { text-align: center; margin-top: 20px; color: #888; font-size: 12px; }";
-  html += "@media (max-width: 600px) { h1 { font-size: 20px; } .section { padding: 12px; } }";
+  html += "@media (max-width: 600px) { h1 { font-size: 20px; } .section { padding: 12px; } #langBtn { padding: 6px 12px; font-size: 11px; min-width: 50px; height: 32px; } }";
   html += "</style>";
   html += "</head>";
   html += "<body>";
@@ -618,7 +620,7 @@ String generateConfigPage() {
   html += "<div class='container'>";
   html += "<div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;'>";
   html += "<h1 style='margin: 0;'>📡 Configuração da Repetidora</h1>";
-  html += "<button id='langBtn' onclick='toggleLanguage()' class='btn' style='padding: 2px 5px; font-size: 8px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-width: 25px;'>🌐 PT</button>";
+  html += "<button id='langBtn' onclick='toggleLanguage()' style='padding: 8px 16px; font-size: 13px; font-weight: 600; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; border-radius: 25px; color: #fff; cursor: pointer; min-width: 60px; height: 36px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); transition: all 0.3s ease; white-space: nowrap;'>🌐 PT</button>";
   html += "</div>";
 
   // Status do sistema
@@ -1776,6 +1778,27 @@ void setPTT(bool on) {
  * @see updateDisplay() para lógica de estados do display
  */
 void updateLED() {
+  // Debug: Log dos estados atuais
+  static unsigned long last_led_debug = 0;
+  static uint8_t last_state = 255;  // Para detectar mudanças de estado
+
+  uint8_t current_state = 0;
+  if (show_ip_screen) current_state = 1;
+  else if (tx_mode != TX_NONE || ptt_state) current_state = 2;
+  else if (cor_stable) current_state = 3;
+  else current_state = 4;
+
+  // Só loga quando o estado muda ou a cada 2 segundos
+  if (current_state != last_state || millis() - last_led_debug > 2000) {
+    Serial.printf("[LED] Estado: %s | tx_mode=%d, ptt_state=%d, cor_stable=%d, show_ip_screen=%d\n",
+                  current_state == 1 ? "AZUL (WIFI)" :
+                  current_state == 2 ? "VERMELHO (TX)" :
+                  current_state == 3 ? "AMARELO (RX)" : "VERDE (IDLE)",
+                  tx_mode, ptt_state, cor_stable, show_ip_screen);
+    last_led_debug = millis();
+    last_state = current_state;
+  }
+
   // Prioridade 1: Wi-Fi ativo (tela de Wi-Fi mostrando)
   if (show_ip_screen) {
     // Wi-Fi ativo: Azul fixo
