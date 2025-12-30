@@ -380,21 +380,43 @@ As identificações automáticas (VOZ e CW) funcionam **independentemente** do m
 
 ## 🎙 Identificação Automática
 
-A repetidora possui sistema de identificação automática em dois modos:
+A repetidora possui sistema de identificação automática em três modos:
 
-### 1. Identificação em Voz
-- **Intervalo**: A cada **11 minutos** (sem QSO ativo) - conforme código original
+### 0. Identificação Inicial (apenas uma vez no boot)
+
+Ao ligar a placa pela primeira vez, são realizadas automaticamente duas identificações:
+
+#### ID Inicial em Voz
+- **Timing**: Imediatamente após o setup (aguarda 2 segundos)
 - **Arquivo**: `/id_voz_8k16.wav` (já incluído no projeto)
 - **Conteúdo**: Repete o indicativo da repetidora (ex: "PY2KEP SP")
 - **Formato do áudio**: WAV, 8kHz, 16-bit, mono
 - **Display**: Mostra "TX VOZ" com fundo vermelho durante transmissão
 
-### 2. Identificação em CW (Morse)
+#### ID Inicial em CW
+- **Timing**: 1 minuto após o ID inicial em voz (62 segundos total do boot)
+- **Velocidade**: 13 WPM (palavras por minuto)
+- **Frequência**: 600 Hz
+- **Conteúdo**: Repete o indicativo em código Morse internacional
+- **Display**: Mostra "TX CW" com fundo vermelho e exibe código Morse em tempo real
+
+**Após os IDs iniciais**: O sistema inicia o ciclo normal de identificação.
+
+### 1. Identificação em Voz (ciclo normal)
+- **Intervalo**: A cada **11 minutos** (sem QSO ativo) - conforme código original
+- **Arquivo**: `/id_voz_8k16.wav` (já incluído no projeto)
+- **Conteúdo**: Repete o indicativo da repetidora (ex: "PY2KEP SP")
+- **Formato do áudio**: WAV, 8kHz, 16-bit, mono
+- **Display**: Mostra "TX VOZ" com fundo vermelho durante transmissão
+- **Observação**: Só inicia após completar os IDs iniciais do boot
+
+### 2. Identificação em CW (Morse - ciclo normal)
 - **Intervalo**: A cada **16 minutos** (sem QSO ativo) - conforme código original
 - **Velocidade**: 13 WPM (palavras por minuto)
 - **Frequência**: 600 Hz
 - **Conteúdo**: Repete o indicativo em código Morse internacional
 - **Display**: Mostra "TX CW" com fundo vermelho e exibe código Morse em tempo real
+- **Observação**: Só inicia após completar os IDs iniciais do boot
 
 ### Nota Importante
 As identificações automáticas (VOZ e CW) funcionam **independentemente** do modo de áudio (courtesy tones). Você pode usar courtesy tones após cada QSO E ainda ter as identificações automáticas nos intervalos regulares.

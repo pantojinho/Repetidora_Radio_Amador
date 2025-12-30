@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "SPIFFS.h"
+#include <LittleFS.h>
 #include "driver/i2s.h"
 #include <esp_task_wdt.h>
 #include <SPI.h>
@@ -14,47 +14,47 @@
 // - Áudio configurado para speaker onboard (GPIO26) via I2S
 // - User_Setup.h deve estar configurado com ILI9341_2_DRIVER
 //
-// SISTEMA DE LED RGB IMPLEMENTADO (v2.1):
+// SISTEMA DE LED RGB IMPLEMENTADO (v2.2):
 // ========================================
 // O LED RGB funciona como indicador visual do estado da repetidora em tempo real.
 //
 // CONFIGURAÇÃO HARDWARE:
 // - Pinos: GPIO4 (R), GPIO16 (G), GPIO17 (B)
-// - Tipo: Cátodo Comum (HIGH = acende, LOW = apaga)
+// - Tipo: ACTIVE LOW (LOW = acende, HIGH = apaga) - conforme ESP32-2432S028R
 // - Controle: PWM via LEDC do ESP32 (freq=5kHz, 8 bits)
+// - IMPORTANTE: Valores são invertidos (255 - valor) porque é active low
 //
-// ESTADOS DO LED:
+// ESTADOS DO LED (correspondem às cores do display):
 // 1. TRANSMITINDO (TX ativo):
-//    - Cor: VERMELHO FIXO
-//    - Pino R: 255 (full brilho)
-//    - Pino G: 0 (apagado)
-//    - Pino B: 0 (apagado)
+//    - Cor: VERMELHO FIXO (mesma cor do display vermelho)
+//    - Pino R: 0 (acende - active low)
+//    - Pino G: 255 (apagado)
+//    - Pino B: 255 (apagado)
 //    - Animação: Nenhuma (cor sólida)
 //
 // 2. RECEBENDO (COR ativo, RX):
-//    - Cor: AMARELO PULSANTE (breathing effect)
-//    - Pino R: Variável (0-255, sincronizado)
-//    - Pino G: Variável (0-255, sincronizado)
-//    - Pino B: 0 (apagado)
-//    - Animação: Breathing usando sin(millis()/500.0)
+//    - Cor: AMARELO (mesma cor do display amarelo)
+//    - Pino R: 0 (acende - active low)
+//    - Pino G: 0 (acende - active low)
+//    - Pino B: 255 (apagado)
+//    - Animação: Pode ser fixo ou pulsante (conforme padrão original)
 //
 // 3. ESPERA/IDLE (sem sinal):
-//    - Cor: RAINBOW SUAVE
-//    - Espectro: Ciclo contínuo 0° a 360° (HSV)
-//    - Animação: Hue incrementa a cada 20ms
-//    - Efeito: Transição suave por todo espectro de cores
+//    - Cor: VERDE (mesma cor do display verde escuro)
+//    - Pino R: 255 (apagado)
+//    - Pino G: 0 (acende - active low)
+//    - Pino B: 255 (apagado)
+//    - Animação: Cor fixa verde (não rainbow)
 //
 // FUNÇÕES DO LED RGB:
-// - setColorFromHue(h): Converte hue HSV para RGB e aplica ao LED
 // - updateLED(): Atualiza LED baseado no estado atual (TX/RX/Idle)
-// - Rainbow: Atualizado continuamente no loop (quando idle)
-// - Status: Atualizado continuamente no loop (TX/RX)
+// - Cores fixas: Verde (idle), Amarelo (RX), Vermelho (TX)
 //
 // UTILIDADE PRÁTICA:
 // - Feedback visual instantâneo sem precisar olhar para o display
 // - Vermelho fixo: Indica transmissão ativa (evite falar)
-// - Amarelo pulsante: Alguém transmitindo no canal
-// - Rainbow: Canal livre, repetidora em espera
+// - Amarelo fixo: Alguém transmitindo no canal (RX ativo)
+// - Verde fixo: Canal livre, repetidora em espera (idle)
 //
 // SISTEMA DE IDENTIFICAÇÃO AUTOMÁTICA (ID VOZ/CW):
 // =================================================
@@ -140,7 +140,7 @@ void logToFile(const char* hypothesisId, const char* message, unsigned long time
   if (millis() - lastLogTime < 100) return;
   lastLogTime = millis();
 
-  File file = SPIFFS.open("/debug.log", FILE_APPEND);
+  File file = LittleFS.open("/debug.log", FILE_APPEND);
   if (file) {
     file.printf("{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"%s\",\"location\":\"%s\",\"message\":\"%s\",\"data\":{\"v1\":%d,\"v2\":%d,\"v3\":%d},\"timestamp\":%lu}\n",
                 hypothesisId, message, message, v1, v2, v3, timestamp);
@@ -163,7 +163,7 @@ void logToFile(const char* hypothesisId, const char* message, unsigned long time
 
 // TFT_DARKGREEN não existe por padrão - definindo manualmente
 #ifndef TFT_DARKGREEN
-#define TFT_DARKGREEN 0x0400  // Verde escuro custom (RGB 0,8,0)
+#define TFT_DARKGREEN 0x07E0  // Verde mais brilhante e visível (RGB 0,31,0) - era 0x03E0
 #endif
 
 // Coordenadas base (serão ajustadas dinamicamente conforme dimensões do display)
@@ -187,7 +187,7 @@ XPT2046_Touchscreen ts(TOUCH_CS);
 #define PIN_BL  21  // Backlight (não mudar - sempre HIGH)
 #define SPEAKER_PIN 26  // Speaker onboard via JST 2-pin connector
 
-// LED RGB pins (cátodo comum - HIGH = acende, LOW = apaga)
+// LED RGB pins (ACTIVE LOW - LOW = acende, HIGH = apaga) - conforme ESP32-2432S028R
 #define PIN_LED_R 4
 #define PIN_LED_G 16
 #define PIN_LED_B 17
@@ -206,7 +206,6 @@ float VOLUME = 0.70f;
 // Intervalos de Identificação Automática (ID Voice/CW)
 const uint32_t VOICE_INTERVAL_MS = 11UL*60UL*1000UL;  // 11 minutos - ID em voz (conforme código original)
 const uint32_t CW_INTERVAL_MS   = 16UL*60UL*1000UL;  // 16 minutos - ID em CW/Morse (conforme código original)
-const uint8_t  QSO_CT_CHANGE   = 5;                 // Troca CT a cada 5 QSOs (conforme código original) (Morse)
 const uint8_t  QSO_CT_CHANGE   = 5;                 // Troca CT a cada 5 QSOs (código original)
 
 // ====================== GLOBAIS ======================
@@ -233,24 +232,21 @@ char current_morse_display[2] = "";  // Caractere atual sendo transmitido
 
 // Identificação inicial no boot
 bool initial_id_done = false;  // Flag para controle de ID inicial
+bool initial_voice_done = false; // NOVA TRAVA: Garante que voz toca só uma vez
 unsigned long boot_time = 0;  // Timestamp de quando a placa foi ligada
+
+// Configuração temporária: pular ID inicial se arquivo não existe (descomentar para ativar)
+#define SKIP_INITIAL_IDS_IF_FILE_MISSING 0  // 0 = NAO pular IDs iniciais
 
 // Timers para Identificação Automática (ID Voice/CW)
 unsigned long last_voice = 0;      // Última identificação em voz
 unsigned long last_cw    = 0;      // Última identificação em CW (Morse)
+unsigned long cw_timer_start = 0;  // Timer para iniciar o CW após a voz
 
 // ====================== VARIÁVEIS DO LED RGB ======================
 // Sistema de controle do LED RGB usando PWM (LED Control do ESP32)
 //
-// previousMillisLED: Timestamp da última atualização do rainbow (para timing)
-// intervalLED: Intervalo entre atualizações do rainbow em ms (20ms = 50 updates/s)
-// hue: Valor de matiz atual (0-360 graus) para o ciclo rainbow
-// led_rainbow_enabled: Flag que indica se o modo rainbow está ativo (true quando idle)
 // ledc_channel_r/g/b: Canais PWM atribuídos pelo sistema LEDC (-1 = não inicializado)
-unsigned long previousMillisLED = 0;
-const long intervalLED = 20;  // ms - quanto menor, mais suave o rainbow
-float hue = 0;  // 0 a 360 para ciclo de cores (HSV hue)
-bool led_rainbow_enabled = true;  // Flag para habilitar/desabilitar rainbow
 int ledc_channel_r = -1;  // Canais LEDC (serão configurados no setup)
 int ledc_channel_g = -1;
 int ledc_channel_b = -1;
@@ -483,9 +479,9 @@ void playCT() {
 }
 
 /**
- * @brief Reproduz arquivo WAV do SPIFFS (para indicativo de voz)
+ * @brief Reproduz arquivo WAV do LittleFS (para indicativo de voz)
  *
- * Esta função lê um arquivo WAV do sistema de arquivos SPIFFS e
+ * Esta função lê um arquivo WAV do sistema de arquivos LittleFS e
  * reproduz através do speaker via I2S. É usada para tocar o
  * indicativo da repetidora (callsign voice).
  *
@@ -494,33 +490,68 @@ void playCT() {
  * - Bit Depth: 16-bit PCM
  * - Canais: Mono (1 canal)
  *
- * @param filename Nome do arquivo no SPIFFS (ex: "/id_voz_8k16.wav")
+ * @param filename Nome do arquivo no LittleFS (ex: "/id_voz_8k16.wav")
  *
  * @see playCT() para courtesy tones gerados por código
- * @see setup() onde SPIFFS é inicializado
+ * @see setup() onde LittleFS é inicializado
  */
 void playVoiceFile(const char* filename) {
-  // Abre arquivo WAV do SPIFFS
-  File file = SPIFFS.open(filename, FILE_READ);
+  // #region agent log - H1: Verificar se arquivo existe antes de abrir
+  logToFile("H1", "playVoiceFile:check_exists", millis(), 0, 0, 0);
+  if (!LittleFS.exists(filename)) {
+    logToFile("H1", "playVoiceFile:not_found", millis(), 0, 0, 0);
+    Serial.printf("ERRO CRÍTICO: Arquivo não existe no LittleFS: %s\n", filename);
+    return;
+  }
+  logToFile("H1", "playVoiceFile:exists", millis(), 0, 0, 0);
+  // #endregion
+
+  // Abre arquivo WAV do LittleFS
+  File file = LittleFS.open(filename, FILE_READ);
   if (!file) {
+    logToFile("H1", "playVoiceFile:open_failed", millis(), 0, 0, 0);
     Serial.printf("ERRO: Não foi possível abrir arquivo: %s\n", filename);
     return;
   }
 
-  Serial.printf("Tocando arquivo de voz: %s (%d bytes)\n", filename, file.size());
+  logToFile("H1", "playVoiceFile:opened", millis(), file.size(), 0, 0);
+  
+  // Tamanho do header WAV (44 bytes) - pula direto para os dados PCM
+  const int WAV_HEADER_SIZE = 44;
+  size_t audioDataSize = file.size() - WAV_HEADER_SIZE;  // Tamanho real dos dados de áudio
+  float estimatedDuration = (float)audioDataSize / (2 * 8000);  // 16-bit = 2 bytes, 8000 Hz sample rate
+  
+  Serial.printf("Tocando arquivo de voz: %s\n", filename);
+  Serial.printf("Tamanho total: %d bytes, Dados de áudio: %d bytes\n", file.size(), audioDataSize);
+  Serial.printf("Duração estimada: %.2f segundos\n", estimatedDuration);
 
   // Configura I2S para 8000 Hz (taxa do arquivo de voz)
   i2s_init(8000);
+  logToFile("H1", "playVoiceFile:i2s_init", millis(), 8000, 0, 0);
   playing = true;
 
-  // Tamanho do header WAV (44 bytes) - pula direto para os dados PCM
-  const int WAV_HEADER_SIZE = 44;
   file.seek(WAV_HEADER_SIZE);
 
-  // Buffer de leitura do áudio
-  const size_t bufferSize = 1024;
-  int16_t audioBuffer[bufferSize];
-  uint16_t i2sBuffer[bufferSize * 2];  // Duplicado para I2S estéreo
+  // Alocação dinâmica para evitar Stack Overflow (Heap em vez de Stack)
+  const size_t bufferSize = 512;
+  int16_t *audioBuffer = (int16_t*) malloc(bufferSize * sizeof(int16_t));
+  uint16_t *i2sBuffer = (uint16_t*) malloc(bufferSize * 2 * sizeof(uint16_t));
+
+  if (audioBuffer == NULL || i2sBuffer == NULL) {
+    Serial.println("ERRO FATAL: Falha ao alocar memória para buffers de áudio!");
+    logToFile("H1", "playVoiceFile:malloc_fail", millis(), 0, 0, 0);
+    if (audioBuffer) free(audioBuffer);
+    if (i2sBuffer) free(i2sBuffer);
+    file.close();
+    i2s_driver_uninstall(I2S_NUM_0);
+    i2s_ok = false;
+    playing = false;
+    return;
+  }
+
+  logToFile("H1", "playVoiceFile:heap_before", millis(), ESP.getFreeHeap(), bufferSize * 4, 0);
+  unsigned long totalBytesRead = 0;
+  unsigned long startTime = millis();
 
   // Lê e reproduz o arquivo em chunks
   size_t bytesRead;
@@ -543,17 +574,41 @@ void playVoiceFile(const char* filename) {
 
     // Reseta watchdog para evitar timeout durante reprodução
     esp_task_wdt_reset();
+
+    totalBytesRead += bytesRead;
+
+    // Log a cada 100 chunks para verificar progresso
+    if (totalBytesRead % (bufferSize * 100) == 0) {
+      Serial.printf("Progresso: %lu bytes lidos (%.1f%%)\n", totalBytesRead, (totalBytesRead * 100.0f) / file.size());
+    }
   }
 
+  unsigned long endTime = millis();
+  unsigned long actualDuration = endTime - startTime;
+  Serial.printf("Áudio reproduzido em %lu ms (%.2f segundos)\n", actualDuration, actualDuration / 1000.0f);
+  Serial.printf("Total de bytes lidos: %lu bytes\n", totalBytesRead);
+  Serial.printf("Duração esperada: %.2f segundos, Duração real: %.2f segundos\n", 
+                estimatedDuration, actualDuration / 1000.0f);
+
+  // Libera memória e fecha arquivo
+  free(audioBuffer);
+  free(i2sBuffer);
   file.close();
 
   // Limpeza: para I2S após reprodução
-  delay(50);  // Pequeno delay para garantir que o áudio acabou
+  // Aguarda um pouco para garantir que todos os buffers I2S sejam esvaziados
+  delay(100);  // Aumentado de 50ms para 100ms para garantir que áudio termine
+  
+  // Força esvaziamento do buffer I2S antes de desinstalar
+  size_t bytes_written;
+  uint16_t dummy_buffer[128] = {0};
+  i2s_write(I2S_NUM_0, dummy_buffer, 0, &bytes_written, 0);  // Tenta escrever 0 bytes para forçar flush
+  
   i2s_driver_uninstall(I2S_NUM_0);
   i2s_ok = false;
   playing = false;
 
-  Serial.println("Reprodução de voz concluída");
+  Serial.printf("Reprodução de voz concluída - PTT deve ser desativado agora\n");
 }
 
 /**
@@ -576,10 +631,13 @@ void playCW(const String &txt) {
   if (playing) return;
 
   Serial.printf("Reproduzindo em CW (Morse): %s\n", txt.c_str());
+  Serial.printf("Texto: %d caracteres\n", txt.length());
 
   // Inicializa I2S para áudio
   i2s_init(SAMPLE_RATE);
   playing = true;
+
+  unsigned long startTime = millis();
 
   // Calcula duração de um ponto (dot) baseado em WPM
   uint32_t dotDuration = 1200 / CW_WPM;  // 1200 = velocidade padrão
@@ -592,9 +650,44 @@ void playCW(const String &txt) {
     bool found = false;
     const char* code = nullptr;
 
-    // Tabela Morse simplificada
+    // Tabela Morse CORRETA (Padrão Internacional)
     const char* morse_map[36] = {
-      ".-","-...","-.-.","---..","..-.",".--.","--.-","....","..",".---","-.-.",".-..","--..","-.--","---.",".--.","-..-",".--.","-.--","--..","-----",".----","..---","...--","....-",".....","-....","--...","---..","----."
+      ".-",   // A
+      "-...", // B
+      "-.-.", // C
+      "-..",  // D
+      ".",    // E
+      "..-.", // F
+      "--.",  // G
+      "....", // H
+      "..",   // I
+      ".---", // J
+      "-.-",  // K
+      ".-..", // L
+      "--",   // M
+      "-.",   // N
+      "---",  // O
+      ".--.", // P
+      "--.-", // Q
+      ".-.",  // R
+      "...",  // S
+      "-",    // T
+      "..-",  // U
+      "...-", // V
+      ".--",  // W
+      "-..-", // X
+      "-.--", // Y
+      "--..", // Z
+      "-----", // 0
+      ".----", // 1
+      "..---", // 2
+      "...--", // 3
+      "....-", // 4
+      ".....", // 5
+      "-....", // 6
+      "--...", // 7
+      "---..", // 8
+      "----."  // 9
     };
     const char* chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -607,6 +700,8 @@ void playCW(const String &txt) {
     }
 
     if (found && code) {
+      Serial.printf("Caractere %c: %s\n", c, code);
+
       // Atualiza display com o caractere atual e código Morse
       snprintf(current_morse_display, sizeof(current_morse_display), "%c", c);
       snprintf(current_morse_char, sizeof(current_morse_char), "%s", code);
@@ -631,10 +726,16 @@ void playCW(const String &txt) {
       // Delay entre caracteres (3 pontos)
       delay(3 * dotDuration);
     } else if (c == ' ') {
+      Serial.println("Espaço detectado");
       // Espaço entre palavras (7 pontos)
       delay(7 * dotDuration);
+    } else {
+      Serial.printf("Caractere não encontrado: %c\n", c);
     }
   }
+
+  unsigned long endTime = millis();
+  Serial.printf("Tempo total CW: %lu ms\n", endTime - startTime);
 
   // Delay final
   delay(50);
@@ -653,70 +754,8 @@ void playCW(const String &txt) {
 
 // ====================== LED RGB ========================
 
-/**
- * @brief Converte matiz (hue) HSV para RGB e aplica no LED RGB
- *
- * Esta função converte um valor de matiz (0-360 graus) para componentes RGB
- * e aplica os valores ao LED RGB usando PWM. A conversão usa o modelo HSV
- * com saturação e valor fixos em 1.0 (cor e brilho máximos).
- *
- * @param h Matiz (hue) em graus, variando de 0 a 360
- *         0 = Vermelho, 120 = Verde, 240 = Azul, etc.
- *
- * Algoritmo de conversão:
- * 1. Divide o círculo de cores em 6 segmentos de 60 graus cada
- * 2. Calcula valor c (chroma) e x (valor secundário)
- * 3. Determina componente baseado no segmento de cor
- * 4. Adiciona offset (m) para ajustar brilho
- * 5. Converte para 0-255 e aplica via PWM
- *
- * Nota importante: LED usa cátodo comum, então valores são aplicados diretamente
- * (0 = apagado, 255 = full brilho) porque HIGH = acende, LOW = apaga
- *
- * @see updateLED() para controle de estados do LED
- */
-void setColorFromHue(float h) {
-  // h de 0 a 360 graus (matiz)
-  // sat=1 (saturação máxima), val=1 (brilho máximo)
-  float c = 1.0;  // Chroma (intensidade da cor)
-  float x = c * (1 - abs(fmod(h / 60.0, 2) - 1));  // Valor intermediário
-  float m = 0;    // Offset para ajuste de brilho
-
-  // Componentes RGB (serão calculados)
-  float r, g, b;
-
-  // Algoritmo HSV→RGB: Divide o espectro em 6 segmentos de 60°
-  if (h < 60) {
-    // 0-60: Vermelho para Amarelo
-    r = c; g = x; b = 0;
-  } else if (h < 120) {
-    // 60-120: Amarelo para Verde
-    r = x; g = c; b = 0;
-  } else if (h < 180) {
-    // 120-180: Verde para Ciano
-    r = 0; g = c; b = x;
-  } else if (h < 240) {
-    // 180-240: Ciano para Azul
-    r = 0; g = x; b = c;
-  } else if (h < 300) {
-    // 240-300: Azul para Magenta
-    r = x; g = 0; b = c;
-  } else {
-    // 300-360: Magenta para Vermelho
-    r = c; g = 0; b = x;
-  }
-
-  // Converte valores normalizados (0-1) para 0-255
-  int red   = (int)((r + m) * 255);
-  int green = (int)((g + m) * 255);
-  int blue  = (int)((b + m) * 255);
-
-  // Aplica valores ao LED via PWM
-  // Cátodo comum: valores aplicados diretamente (0 = apagado, 255 = full brilho)
-  if (ledc_channel_r >= 0) ledcWrite(ledc_channel_r, red);
-  if (ledc_channel_g >= 0) ledcWrite(ledc_channel_g, green);
-  if (ledc_channel_b >= 0) ledcWrite(ledc_channel_b, blue);
-}
+// Função setColorFromHue() removida - não é mais necessária
+// LED agora usa cores fixas correspondentes ao display (verde/amarelo/vermelho)
 
 /**
  * @brief Atualiza o LED RGB baseado no estado atual da repetidora
@@ -736,37 +775,37 @@ void setColorFromHue(float h) {
  *    - Uso: Indica que está recebendo sinal
  *
  * 3. Idle (cor_stable = false && ptt_state = false):
- *    - Cor: Rainbow suave
- *    - Comportamento: Ciclo contínuo de cores
+ *    - Cor: Verde fixo (mesma cor do display verde escuro)
+ *    - Comportamento: Cor sólida verde
  *    - Uso: Indica que está em espera
  *
  * Nota: Esta função deve ser chamada continuamente no loop principal
  *       para manter animações atualizadas
  *
- * @see setColorFromHue() para conversão de cores
  * @see loop() onde esta função é chamada
  */
 void updateLED() {
   if (ledc_channel_r < 0 || ledc_channel_g < 0 || ledc_channel_b < 0) return;  // Não inicializado
   
   if (ptt_state) {
-    // TX ativo: Vermelho fixo
-    led_rainbow_enabled = false;
-    ledcWrite(ledc_channel_r, 255);  // Vermelho full
-    ledcWrite(ledc_channel_g, 0);    // Verde apagado
-    ledcWrite(ledc_channel_b, 0);    // Azul apagado
+    // TX ativo: Vermelho fixo (mesma cor do display vermelho)
+    // ACTIVE LOW: 0 = acende, 255 = apaga
+    ledcWrite(ledc_channel_r, 0);    // Vermelho acende (LOW)
+    ledcWrite(ledc_channel_g, 255); // Verde apagado (HIGH)
+    ledcWrite(ledc_channel_b, 255);  // Azul apagado (HIGH)
   } else if (cor_stable) {
-    // RX ativo: Amarelo pulsante (breathing)
-    led_rainbow_enabled = false;
-    // Breathing effect usando seno
-    float brightness = (sin(millis() / 500.0) + 1.0) / 2.0;  // 0 a 1
-    int val = (int)(brightness * 255);
-    ledcWrite(ledc_channel_r, val);    // Vermelho pulsante
-    ledcWrite(ledc_channel_g, val);    // Verde pulsante
-    ledcWrite(ledc_channel_b, 0);      // Azul apagado
+    // RX ativo: Amarelo (mesma cor do display amarelo)
+    // ACTIVE LOW: 0 = acende, 255 = apaga
+    // Amarelo = Vermelho + Verde (ambos acendem)
+    ledcWrite(ledc_channel_r, 0);    // Vermelho acende (LOW)
+    ledcWrite(ledc_channel_g, 0);    // Verde acende (LOW)
+    ledcWrite(ledc_channel_b, 255);  // Azul apagado (HIGH)
   } else {
-    // Idle: Rainbow suave
-    led_rainbow_enabled = true;
+    // Idle: Verde (mesma cor do display verde escuro)
+    // ACTIVE LOW: 0 = acende, 255 = apaga
+    ledcWrite(ledc_channel_r, 255);  // Vermelho apagado (HIGH)
+    ledcWrite(ledc_channel_g, 0);    // Verde acende (LOW)
+    ledcWrite(ledc_channel_b, 255);  // Azul apagado (HIGH)
   }
 }
 
@@ -915,14 +954,34 @@ void drawLayout() {
  * @see updateUptimeOnly() para atualização do uptime
  */
 void updateDisplay() {
+  // #region agent log - H2: Monitorar chamadas ao updateDisplay
+  logToFile("H2", "updateDisplay:entry", millis(), ESP.getFreeHeap(), 0, 0);
+  // #endregion
+
   // Atualização apenas quando necessário (mudança de estado, touch, etc.)
   // Uptime é atualizado separadamente por updateUptimeOnly() - SEM refresh da tela
   unsigned long currentMillis = millis();
-  
+
   // Throttle: evita updates muito frequentes (mínimo 250ms entre updates)
   // Mas permite primeira atualização sempre (quando last_display_update == 0)
-  if (last_display_update != 0 && currentMillis - last_display_update < 250) return;
+  // NOTA: Durante TX (ptt_state || tx_mode != TX_NONE), NÃO faz throttle
+  // para garantir que o display mantenha o estado TX durante toda a transmissão
+  if (last_display_update != 0 && currentMillis - last_display_update < 250) {
+    // #region agent log - H3: Throttle checking
+    logToFile("H2", "updateDisplay:throttled", millis(), currentMillis - last_display_update, 0);
+    // #endregion
+
+    // Se está em TX, atualiza mais frequentemente para manter display sincronizado
+    if (ptt_state || tx_mode != TX_NONE) {
+      // Atualiza a cada 100ms durante TX para manter estado TX visível
+      if (currentMillis - last_display_update < 100) return;
+    } else {
+      // Em modo normal, usa throttle de 250ms
+      return;
+    }
+  }
   last_display_update = currentMillis;
+  logToFile("H2", "updateDisplay:will_update", millis(), ESP.getFreeHeap(), 0, 0);
   
   // #region agent log
   debugLog("updateDisplay:entry", "Function called", "F", millis());
@@ -988,57 +1047,99 @@ void updateDisplay() {
       status_text = "RX ATIVO";
       status_subtext = "";
     } else {
-      status_bg = TFT_DARKGREEN;
-      status_text_color = TFT_WHITE;
+      // EM ESCUTA - Força verde mais brilhante para melhor visibilidade
+      status_bg = TFT_GREEN;  // Usa TFT_GREEN padrão (mais brilhante que DARKGREEN)
+      status_text_color = TFT_BLACK;  // Texto preto para melhor contraste
       status_text = "EM ESCUTA";
       status_subtext = "";
     }
     
+    // Debug: Log do estado atual do display
+    Serial.printf("DISPLAY STATE: tx_mode=%d, ptt_state=%d, cor_stable=%d, status_bg=0x%04X, text='%s'\n",
+                  tx_mode, ptt_state, cor_stable, status_bg, status_text);
+    
     // Caixa de status com bordas arredondadas (ajustado para header de 60px)
     int16_t status_y = 65;  // Ajustado de 55 para 65 (header agora é 60px)
+    int16_t status_h = 90;  // Altura aumentada de 85 para 90 para evitar cortes
     static uint16_t last_status_bg = 0xFFFF;  // Para detectar mudança de status
     
     // Só redesenha status se mudou (evita flicker)
-    if (status_bg != last_status_bg || isFullRedraw) {
-      tft.fillRoundRect(10, status_y, W - 20, 85, 10, status_bg);  // Raio aumentado para 10
-      tft.drawRoundRect(10, status_y, W - 20, 85, 10, TFT_WHITE);
+    // FORÇA redraw se está em modo "EM ESCUTA" para garantir visibilidade
+    bool forceRedraw = (status_bg == TFT_GREEN && last_status_bg != TFT_GREEN);
+    if (status_bg != last_status_bg || isFullRedraw || forceRedraw) {
+      // Limpa área um pouco maior para garantir que não sobrem resquícios
+      tft.fillRect(5, status_y, W - 10, status_h, TFT_BLACK);
+      
+      tft.fillRoundRect(10, status_y, W - 20, status_h, 10, status_bg);  // Raio aumentado para 10
+      tft.drawRoundRect(10, status_y, W - 20, status_h, 10, TFT_WHITE);
       last_status_bg = status_bg;
+      
+      Serial.printf("STATUS REDRAWN: bg=0x%04X, text='%s'\n", status_bg, status_text);
     }
     
     // Texto de status grande - SEMPRE redesenhado para garantir visibilidade
     tft.setTextColor(status_text_color, status_bg);
     tft.setTextSize(3);
+    
     // Usa setCursor e print ao invés de drawCentreString para garantir funcionamento
     int16_t status_text_w = tft.textWidth(status_text);
-    int16_t status_text_y = status_y + (85 - 24) / 2;  // Centralizado verticalmente (textSize 3 ≈ 24px altura)
-    tft.setCursor((W - status_text_w) / 2, status_text_y);
+    // Centralizado verticalmente com um pequeno ajuste (+2px) para visualização melhor
+    int16_t status_text_y = status_y + (status_h - 24) / 2 + 2; 
+    
+    // LIMPEZA EXTRA: Apaga retângulo exato onde o texto vai ficar antes de escrever
+    // Sempre limpa para evitar texto fantasma, especialmente em modo "EM ESCUTA"
+    int16_t clear_x = (W - status_text_w) / 2;
+    tft.fillRect(10, status_text_y - 2, W - 20, 28, status_bg);  // Área maior para garantir limpeza
+
+    tft.setCursor(clear_x, status_text_y);
     tft.print(status_text);
+    
+    // Debug adicional para modo "EM ESCUTA"
+    if (status_bg == TFT_GREEN) {
+      Serial.printf("TEXTO 'EM ESCUTA' DESENHADO: x=%d, y=%d, w=%d, bg=0x%04X\n", 
+                    clear_x, status_text_y, status_text_w, status_bg);
+    }
     
     // Subtexto (para modo CW/Voz ou QSO)
     if (status_subtext[0] != '\0') {
       tft.setTextSize(2);
       tft.setTextColor(status_text_color, status_bg);
       int16_t subtext_w = tft.textWidth(status_subtext);
+      
+      // Limpeza prévia do subtexto
+      tft.fillRect(10, status_y + 60, W - 20, 16, status_bg);
+
       tft.setCursor((W - subtext_w) / 2, status_y + 60);
       tft.print(status_subtext);
 
       // Se está em modo CW e há código Morse sendo transmitido, mostra abaixo
       if (tx_mode == TX_CW && current_morse_char[0] != '\0') {
+        // Limpa área do código Morse antes de desenhar (evita sobreposição)
+        // Aumentei a altura da limpeza para 20px para garantir
+        tft.fillRect(10, status_y + 35, W - 20, 20, status_bg);
+
         tft.setTextColor(TFT_YELLOW, status_bg);
         int16_t morse_w = tft.textWidth(current_morse_char);
         tft.setCursor((W - morse_w) / 2, status_y + 35);  // Entre texto principal e subtexto
         tft.printf("%c: %s", current_morse_display[0], current_morse_char);
+      } else if (tx_mode == TX_CW) {
+        // Se está em modo CW mas não tem código Morse para mostrar, limpa área
+        tft.fillRect(10, status_y + 35, W - 20, 20, status_bg);
       }
     } else if (ptt_state && tx_mode == TX_NONE) {
       // Modo RX normal - mostra QSO ATUAL
       tft.setTextSize(2);
       tft.setTextColor(TFT_WHITE, status_bg);
       int16_t qso_w = tft.textWidth("QSO ATUAL");
+      
+      // Limpeza prévia
+      tft.fillRect(10, status_y + 60, W - 20, 16, status_bg);
+
       tft.setCursor((W - qso_w) / 2, status_y + 60);
       tft.print("QSO ATUAL");
     } else {
-      // Limpa área de subtexto se não está em TX (evita texto fantasma)
-      tft.fillRect(10, status_y + 55, W - 20, 25, status_bg);
+      // Limpa área de subtexto e código Morse se não está em TX (evita texto fantasma)
+      tft.fillRect(10, status_y + 35, W - 20, 50, status_bg);
     }
   
     // ========== COURTESY TONE (Abaixo do status) ==========
@@ -1161,7 +1262,7 @@ void updateDisplay() {
  *
  * Esta função configura todos os componentes da repetidora:
  * - Comunicação serial para debug
- * - Sistema de arquivos SPIFFS para logs
+ * - Sistema de arquivos LittleFS para logs
  * - Watchdog do sistema
  * - Backlight do display
  * - Display TFT com rotação correta
@@ -1172,7 +1273,7 @@ void updateDisplay() {
  *
  * Fluxo de inicialização:
  * 1. Inicializa Serial (115200 baud)
- * 2. Configura SPIFFS para logs em arquivo
+ * 2. Configura LittleFS para logs em arquivo
  * 3. Inicializa watchdog (30s timeout)
  * 4. Configura backlight (HIGH = ON)
  * 5. Inicializa display TFT
@@ -1195,25 +1296,25 @@ void setup() {
   delay(1000);  // Aguarda Serial estar pronto
   Serial.println("\n\n=== INICIALIZACAO REPETIDORA ===");
 
-  // #region agent log - Inicialização SPIFFS para logs
-  Serial.println("Inicializando SPIFFS...");
-  if (!SPIFFS.begin(true)) {
-    Serial.println("ERRO: SPIFFS falhou ao inicializar!");
+  // #region agent log - Inicialização LittleFS para logs
+  Serial.println("Inicializando LittleFS...");
+  if (!LittleFS.begin(true)) {
+    Serial.println("ERRO: LittleFS falhou ao inicializar!");
   } else {
-    Serial.println("SPIFFS inicializado com sucesso");
+    Serial.println("LittleFS inicializado com sucesso");
     // Limpa log anterior ao iniciar
-    if (SPIFFS.exists("/debug.log")) {
-      SPIFFS.remove("/debug.log");
+    if (LittleFS.exists("/debug.log")) {
+      LittleFS.remove("/debug.log");
       Serial.println("Log anterior removido");
     }
   }
 
   // Testa escrita no log
-  File testFile = SPIFFS.open("/debug.log", FILE_WRITE);
+  File testFile = LittleFS.open("/debug.log", FILE_WRITE);
   if (testFile) {
     testFile.println("TESTE DE ESCRITA");
     testFile.close();
-    Serial.println("Teste de escrita SPIFFS OK");
+    Serial.println("Teste de escrita LittleFS OK");
   } else {
     Serial.println("ERRO: Não foi possível criar arquivo de teste");
   }
@@ -1329,11 +1430,12 @@ void setup() {
   // O LED RGB é controlado via PWM para permitir transições suaves de cores
   //
   // Especificações do LED RGB:
-  // - Tipo: Cátodo Comum (HIGH acende, LOW apaga)
+  // - Tipo: ACTIVE LOW (LOW acende, HIGH apaga) - conforme ESP32-2432S028R
   // - Pinos: R=GPIO4, G=GPIO16, B=GPIO17
   // - Controle: PWM via LEDC (LED Control) do ESP32
   // - Frequência: 5kHz (boa frequência para evitar flicker visível)
   // - Resolução: 8 bits (valores de 0-255)
+  // - IMPORTANTE: Valores são invertidos (255 - valor) porque é active low
   //
   // Observação: No ESP32, ledcAttach() configura o canal PWM automaticamente
   //             e retorna o número do canal atribuído, então não precisa pinMode()
@@ -1341,11 +1443,11 @@ void setup() {
   ledc_channel_g = ledcAttach(PIN_LED_G, 5000, 8);  // Green
   ledc_channel_b = ledcAttach(PIN_LED_B, 5000, 8);  // Blue
 
-  // Inicializa LED apagado (cátodo comum: 0 = apagado)
+  // Inicializa LED apagado (active low: 255 = apagado)
   // Isso é importante porque no boot o LED não deve estar aceso
-  ledcWrite(ledc_channel_r, 0);
-  ledcWrite(ledc_channel_g, 0);
-  ledcWrite(ledc_channel_b, 0);
+  ledcWrite(ledc_channel_r, 255);  // Apagado (HIGH)
+  ledcWrite(ledc_channel_g, 255);  // Apagado (HIGH)
+  ledcWrite(ledc_channel_b, 255);  // Apagado (HIGH)
 
   Serial.printf("LED RGB configurado (PWM) - Canais: R=%d, G=%d, B=%d\n",
                 ledc_channel_r, ledc_channel_g, ledc_channel_b);
@@ -1431,6 +1533,18 @@ void loop() {
   }
   // #endregion
 
+  // #region agent log - H3: Monitorar stack overflow no loop
+  static unsigned long lastStackCheck = 0;
+  if (millis() - lastStackCheck >= 1000) {
+    lastStackCheck = millis();
+    uint32_t freeStack = uxTaskGetStackHighWaterMark(NULL);
+    logToFile("H3", "loop:stack_check", millis(), freeStack, ESP.getFreeHeap(), 0);
+    if (freeStack < 500) {
+      Serial.printf("ALERTA: Stack livre muito baixo: %lu bytes\n", freeStack);
+    }
+  }
+  // #endregion
+
   // Reseta watchdog a cada iteração (previne timeout)
   esp_task_wdt_reset();
 
@@ -1449,6 +1563,15 @@ void loop() {
   // ========== CONTROLE DE COR (SQUELCH DETECTION) ==========
   // Lê o pino COR (LOW = sinal detectado)
   bool cor = (digitalRead(PIN_COR) == LOW);
+  
+  // Debug: Verifica estado do PTT periodicamente
+  static unsigned long last_ptt_debug = 0;
+  if (millis() - last_ptt_debug >= 2000) {  // A cada 2 segundos
+    last_ptt_debug = millis();
+    bool ptt_pin_state = digitalRead(PIN_PTT);
+    Serial.printf("DEBUG PTT: ptt_state=%d, PIN_PTT=%d, cor=%d, cor_stable=%d, tx_mode=%d\n",
+                  ptt_state, ptt_pin_state, cor, cor_stable, tx_mode);
+  }
 
   // Se o estado do COR mudou, trata a transição
   if (cor != cor_stable) {
@@ -1463,6 +1586,7 @@ void loop() {
       // COR ativado → INÍCIO DO QSO → PTT ON
       ptt_state = true;
       digitalWrite(PIN_PTT, HIGH);  // Ativa transmissão
+      Serial.printf("PTT ATIVADO: PIN_PTT=%d (HIGH)\n", digitalRead(PIN_PTT));
     } else {
       // COR desativado → FIM DO QSO → HANG TIME → CT → PTT OFF
       delay(HANG_TIME_MS);  // Aguarda hang time (600ms)
@@ -1471,6 +1595,7 @@ void loop() {
       }
       digitalWrite(PIN_PTT, LOW);  // Desativa transmissão
       ptt_state = false;
+      Serial.printf("PTT DESATIVADO: PIN_PTT=%d (LOW)\n", digitalRead(PIN_PTT));
       qso_count++;  // Incrementa contador de QSOs
 
       // Troca automática do CT a cada 5 QSOs (código original)
@@ -1524,21 +1649,36 @@ void loop() {
     // #endregion
 
     updateUptimeOnly();  // Atualiza APENAS o uptime, sem redesenhar tela
+    
+    // FORÇA atualização do display se está em modo "EM ESCUTA" para garantir visibilidade
+    // Isso garante que a tela verde não desapareça
+    if (!ptt_state && !cor_stable && tx_mode == TX_NONE) {
+      needsFullRedraw = true;
+      last_display_update = 0;  // Reseta throttle para forçar atualização
+      updateDisplay();
+      Serial.println("FORÇANDO UPDATE DISPLAY: Modo EM ESCUTA (verde)");
+    }
+  }
+  
+  // ========== ATUALIZAÇÃO PERIÓDICA DO DISPLAY ==========
+  // Garante que o display seja atualizado periodicamente mesmo sem mudanças de estado
+  // Isso previne que a tela verde "EM ESCUTA" desapareça
+  static unsigned long last_periodic_display_update = 0;
+  if (currentMillis - last_periodic_display_update >= 10000) {  // A cada 10 segundos
+    last_periodic_display_update = currentMillis;
+    
+    // Se está em modo "EM ESCUTA", força atualização do display
+    if (!ptt_state && !cor_stable && tx_mode == TX_NONE) {
+      needsFullRedraw = true;
+      last_display_update = 0;  // Reseta throttle
+      updateDisplay();
+      Serial.println("UPDATE PERIÓDICO DISPLAY: Mantendo tela verde visível");
+    }
   }
 
   // ========== CONTROLE DO LED RGB ==========
   updateLED();  // Atualiza LED baseado no status (TX/RX/Idle)
-
-  // Se rainbow habilitado (estado idle), atualiza cor continuamente
-  if (led_rainbow_enabled) {
-    unsigned long currentMillisLED = millis();
-    if (currentMillisLED - previousMillisLED >= intervalLED) {
-      previousMillisLED = currentMillisLED;
-      hue += 1.0;  // Velocidade do rainbow (aumenta para mais rápido)
-      if (hue >= 360) hue = 0;  // Reinicia ciclo ao atingir 360°
-      setColorFromHue(hue);  // Aplica nova cor ao LED
-    }
-  }
+  // Nota: Rainbow foi removido - LED agora usa cores fixas correspondentes ao display
 
   // ========== IDENTIFICAÇÃO AUTOMÁTICA (ID VOZ e CW) ==========
 
@@ -1546,22 +1686,41 @@ void loop() {
   if (!initial_id_done && !playing && !ptt_state) {
     unsigned long time_since_boot = millis() - boot_time;
 
-    // Primeiro ID: Voz imediatamente após o setup (aguarda 2 segundos)
-    if (time_since_boot >= 2000 && time_since_boot < 62000) {
+    // 1. ID Inicial em Voz (Executa uma única vez após 2 segundos)
+    if (!initial_voice_done && time_since_boot >= 2000) {
+      #if !SKIP_INITIAL_IDS_IF_FILE_MISSING
       Serial.println("=== IDENTIFICAÇÃO INICIAL EM VOZ ===");
+      unsigned long ptt_start_time = millis();
       tx_mode = TX_VOICE;
       updateDisplay();
       digitalWrite(PIN_PTT, HIGH);
-      delay(100);
+      Serial.printf("PTT ATIVADO em %lu ms\n", ptt_start_time);
+      delay(100);  // Aguarda estabilização do PTT
+      
       playVoiceFile("/id_voz_8k16.wav");
-      delay(100);
+      
+      // Desativa PTT imediatamente após reprodução
       digitalWrite(PIN_PTT, LOW);
+      unsigned long ptt_end_time = millis();
+      unsigned long ptt_duration = ptt_end_time - ptt_start_time;
+      Serial.printf("PTT DESATIVADO em %lu ms (duração total: %lu ms = %.2f segundos)\n", 
+                    ptt_end_time, ptt_duration, ptt_duration / 1000.0f);
+      delay(50);  // Pequeno delay antes de mudar modo
+      
       tx_mode = TX_NONE;
       updateDisplay();
       Serial.println("Identificação inicial de voz concluída");
+      #else
+      Serial.println("=== PULANDO IDENTIFICAÇÃO INICIAL EM VOZ (arquivo ausente) ===");
+      delay(2000);
+      #endif
+      
+      initial_voice_done = true;      // Marca voz como feita
+      cw_timer_start = millis();      // Inicia contagem para o CW
     }
-    // Segundo ID: CW após 1 minuto do boot (62 segundos total)
-    else if (time_since_boot >= 62000) {
+    
+    // 2. ID Inicial em CW (Executa 5 segundos APÓS a voz terminar)
+    else if (initial_voice_done && (millis() - cw_timer_start >= 5000)) {
       Serial.println("=== IDENTIFICAÇÃO INICIAL EM CW ===");
       tx_mode = TX_CW;
       updateDisplay();
@@ -1574,7 +1733,7 @@ void loop() {
       updateDisplay();
       Serial.println("Identificação inicial CW concluída");
 
-      // Marca que os IDs iniciais foram completados
+      // Marca que TODOS os IDs iniciais foram completados
       initial_id_done = true;
 
       // Reseta os timers para o ciclo normal
@@ -1588,13 +1747,23 @@ void loop() {
   if (initial_id_done && millis() - last_voice >= VOICE_INTERVAL_MS && !playing && !ptt_state) {
     last_voice = millis();
     Serial.println("=== IDENTIFICAÇÃO EM VOZ (11 min) ===");
+    unsigned long ptt_start_time = millis();
     tx_mode = TX_VOICE;  // Define modo de transmissão
     updateDisplay();  // Atualiza display para mostrar TX VOZ
     digitalWrite(PIN_PTT, HIGH);  // PTT ON
-    delay(100);
+    Serial.printf("PTT ATIVADO em %lu ms\n", ptt_start_time);
+    delay(100);  // Aguarda estabilização do PTT
+    
     playVoiceFile("/id_voz_8k16.wav");  // Toca indicativo de voz
-    delay(100);
+    
+    // Desativa PTT imediatamente após reprodução
     digitalWrite(PIN_PTT, LOW);   // PTT OFF
+    unsigned long ptt_end_time = millis();
+    unsigned long ptt_duration = ptt_end_time - ptt_start_time;
+    Serial.printf("PTT DESATIVADO em %lu ms (duração total: %lu ms = %.2f segundos)\n", 
+                  ptt_end_time, ptt_duration, ptt_duration / 1000.0f);
+    delay(50);  // Pequeno delay antes de mudar modo
+    
     tx_mode = TX_NONE;  // Reseta modo de transmissão
     updateDisplay();  // Volta para estado normal
     Serial.println("Identificação de voz concluída");

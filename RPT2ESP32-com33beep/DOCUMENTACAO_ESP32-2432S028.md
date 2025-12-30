@@ -85,10 +85,11 @@ All WIKIs contain complete information about the project, in different languages
 **Nota**: LED RGB usa GPIO4, 16, 17. Por isso COR/PTT foram movidos para GPIO22/27 (Extended IO)
 
 **Modo de Operação do LED**:
-- Anodo Comum: LOW acende, HIGH apaga
+- ACTIVE LOW: LOW acende, HIGH apaga (conforme ESP32-2432S028R)
 - PWM: 5kHz de frequência, 8 bits de resolução (0-255)
 - Controlado por: `ledcAttach()` e `ledcWrite()`
-- Atualização em tempo real: 20ms interval para rainbow, contínuo para status
+- Valores invertidos: 255 - valor (porque é active low)
+- Cores fixas: Verde (idle), Amarelo (RX), Vermelho (TX) - correspondem ao display
 
 ### Extended IO (P3 e CN1) - Para Conexões Externas
 
@@ -254,13 +255,14 @@ Speaker 8Ω      ──────────────────── JS
 
 ### 3. LED RGB (Indicador de Status - IMPLEMENTADO)
 - **Pinos**: GPIO4 (R), GPIO16 (G), GPIO17 (B)
-- **Tipo**: Anodo Comum (LOW acende, HIGH apaga)
-- **Cores de Status** (Implementado e Funcional):
-  - **Vermelho Fixo**: Transmitindo (TX ativo)
-  - **Amarelo Pulsante**: Recebendo com COR ativo (RX - breathing effect)
-  - **Rainbow Suave**: Idle/Nenhum sinal (ciclo de cores suave)
+- **Tipo**: ACTIVE LOW (LOW acende, HIGH apaga) - conforme ESP32-2432S028R
+- **Cores de Status** (Implementado e Funcional - correspondem ao display):
+  - **Vermelho Fixo**: Transmitindo (TX ativo) - mesma cor do display vermelho
+  - **Amarelo Fixo**: Recebendo com COR ativo (RX) - mesma cor do display amarelo
+  - **Verde Fixo**: Idle/Nenhum sinal - mesma cor do display verde escuro
 - **Controle**: PWM via ledcAttach (freq=5kHz, 8 bits de resolução)
 - **Funcionalidade**: Indica visualmente o estado da repetidora em tempo real
+- **IMPORTANTE**: Valores são invertidos (255 - valor) porque o LED é active low
 
 ### 4. Indicadores Visuais (Layout Profissional)
 - **Header**: Callsign "PY2KEP SP" em amarelo sobre fundo azul escuro (60px)
@@ -414,10 +416,10 @@ As identificações automáticas (VOZ e CW) funcionam **independentemente** do m
 11. ✅ **Áudio I2S**: Speaker onboard via GPIO26
 12. ✅ **Ghosting Eliminado**: ILI9341_2_DRIVER + limpeza completa
 13. ✅ **LED RGB Indicador de Status**: Sistema completo de feedback visual
-   - Vermelho fixo durante TX
-   - Amarelo pulsante durante RX (breathing effect)
-   - Rainbow suave quando idle (ciclo de cores)
-   - Controle via PWM para transições suaves
+   - Vermelho fixo durante TX (mesma cor do display)
+   - Amarelo fixo durante RX (mesma cor do display)
+   - Verde fixo quando idle (mesma cor do display)
+   - Controle via PWM com lógica ACTIVE LOW corrigida
 14. ✅ **Debug Logging Avançado**: Sistema de log em arquivo (NDJSON) para análise offline
 15. ✅ **Comentários Detalhados**: Todo o código está documentado com explicações em português
 
@@ -433,7 +435,7 @@ As identificações automáticas (VOZ e CW) funcionam **independentemente** do m
 - **Hang Time**: 600ms (delay após COR desativar antes de tocar CT)
 - **Extended IO**: P3 e CN1 para conexões externas (COR/PTT)
 - **Level Shifter**: OBRIGATÓRIO se rádio usar 5V
-- **LED RGB**: Controle via PWM 5kHz, 8 bits, anodo comum (LOW=acende)
+- **LED RGB**: Controle via PWM 5kHz, 8 bits, ACTIVE LOW (LOW=acende, HIGH=apaga)
 - **Debug Logging**: Sistema em NDJSON armazenado em /debug.log no SPIFFS
 - **Uptime Update**: Atualização a cada 5 segundos sem redesenhar tela completa
 
@@ -460,64 +462,59 @@ ledc_channel_b = ledcAttach(PIN_LED_B, 5000, 8);
 
 **Estado 1: Transmitindo (TX)**
 - **Condição**: `ptt_state == true`
-- **Cor**: Vermelho sólido
+- **Cor**: Vermelho sólido (mesma cor do display vermelho)
 - **Ação**:
   ```cpp
-  ledcWrite(ledc_channel_r, 0);    // Vermelho full
-  ledcWrite(ledc_channel_g, 255);  // Verde apagado
-  ledcWrite(ledc_channel_b, 255);  // Azul apagado
+  // ACTIVE LOW: 0 = acende, 255 = apaga
+  ledcWrite(ledc_channel_r, 0);    // Vermelho acende (LOW)
+  ledcWrite(ledc_channel_g, 255);  // Verde apagado (HIGH)
+  ledcWrite(ledc_channel_b, 255);  // Azul apagado (HIGH)
   ```
 - **Comportamento**: Cor fixa, sem animação
 
 **Estado 2: Recebendo (RX - COR ativo)**
 - **Condição**: `cor_stable == true && ptt_state == false`
-- **Cor**: Amarelo com efeito breathing (pulsante)
+- **Cor**: Amarelo fixo (mesma cor do display amarelo)
 - **Ação**:
   ```cpp
-  float brightness = (sin(millis() / 500.0) + 1.0) / 2.0;  // 0 a 1
-  int val = (int)(brightness * 255);
-  ledcWrite(ledc_channel_r, 255 - val);  // Vermelho pulsante
-  ledcWrite(ledc_channel_g, 255 - val);  // Verde pulsante
-  ledcWrite(ledc_channel_b, 255);        // Azul apagado
+  // ACTIVE LOW: 0 = acende, 255 = apaga
+  // Amarelo = Vermelho + Verde (ambos acendem)
+  ledcWrite(ledc_channel_r, 0);    // Vermelho acende (LOW)
+  ledcWrite(ledc_channel_g, 0);    // Verde acende (LOW)
+  ledcWrite(ledc_channel_b, 255);  // Azul apagado (HIGH)
   ```
-- **Comportamento**: Animação suave de 0% a 100% de brilho em ciclo
+- **Comportamento**: Cor fixa amarela
 
 **Estado 3: Idle (Nenhum sinal)**
 - **Condição**: `cor_stable == false && ptt_state == false`
-- **Cor**: Rainbow suave (ciclo de cores)
+- **Cor**: Verde fixo (mesma cor do display verde escuro)
 - **Ação**:
   ```cpp
-  hue += 1.0;  // Aumenta 1 grau a cada 20ms
-  if (hue >= 360) hue = 0;
-  setColorFromHue(hue);  // Aplica cor atual
+  // ACTIVE LOW: 0 = acende, 255 = apaga
+  ledcWrite(ledc_channel_r, 255);  // Vermelho apagado (HIGH)
+  ledcWrite(ledc_channel_g, 0);    // Verde acende (LOW)
+  ledcWrite(ledc_channel_b, 255);  // Azul apagado (HIGH)
   ```
-- **Comportamento**: Ciclo contínuo através de todo espectro de cores
+- **Comportamento**: Cor fixa verde
 
 ### Funções do LED RGB
 
-**`setColorFromHue(float h)`**
-- Converte matiz HSV para RGB
-- Parâmetro: `h` (0-360 graus)
-- Saturação fixa: 1.0
-- Valor fixo: 1.0
-- Inverte valores para anodo comum
-
 **`updateLED()`**
 - Verifica estado atual (TX/RX/Idle)
-- Atualiza LED de acordo com estado
-- Gerencia flag `led_rainbow_enabled`
+- Atualiza LED de acordo com estado usando cores fixas
+- Cores correspondem ao display: Verde (idle), Amarelo (RX), Vermelho (TX)
 - Chamada continuamente no loop principal
+- Usa lógica ACTIVE LOW (valores invertidos: 0 = acende, 255 = apaga)
 
 ### Timing do LED
-- **Rainbow**: Atualiza a cada 20ms (`intervalLED = 20`)
-- **Breathing**: Atualiza continuamente no loop (frequência baseada em `millis() / 500.0`)
-- **TX**: Controle direto sem delay (resposta imediata)
+- **Atualização**: Contínua no loop principal (resposta imediata)
+- **Sem animações**: Cores fixas para melhor correspondência com o display
 
 ### Utilidade Visual
 O LED RGB fornece feedback visual instantâneo sobre o status da repetidora:
-- **Vermelho fixo**: Indica transmissão ativa (evite falar)
-- **Amarelo pulsante**: Alguém está transmitindo no canal
-- **Rainbow**: Canal livre, repetidora em espera
+- **Vermelho fixo**: Indica transmissão ativa (evite falar) - mesma cor do display
+- **Amarelo fixo**: Alguém está transmitindo no canal (RX ativo) - mesma cor do display
+- **Verde fixo**: Canal livre, repetidora em espera (idle) - mesma cor do display
 - Útil para operações rápidas de "radio check" sem olhar para o display
 
 ---
