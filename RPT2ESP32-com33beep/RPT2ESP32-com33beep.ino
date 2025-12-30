@@ -17,46 +17,46 @@
 // - Áudio configurado para speaker onboard (GPIO26) via I2S
 // - User_Setup.h deve estar configurado com ILI9341_2_DRIVER
 //
-// SISTEMA DE LED RGB IMPLEMENTADO (v2.2):
+// SISTEMA DE LED RGB IMPLEMENTADO (v2.3):
 // ========================================
 // O LED RGB funciona como indicador visual do estado da repetidora em tempo real.
 //
 // CONFIGURAÇÃO HARDWARE:
 // - Pinos: GPIO4 (R), GPIO16 (G), GPIO17 (B)
 // - Tipo: ACTIVE LOW (LOW = acende, HIGH = apaga) - conforme ESP32-2432S028R
-// - Controle: PWM via LEDC do ESP32 (freq=5kHz, 8 bits)
-// - IMPORTANTE: Valores são invertidos (255 - valor) porque é active low
+// - Controle: digitalWrite() simples (HIGH=apagado, LOW=aceso)
+// - Importante: Não usa PWM para máxima compatibilidade com ESP32 Arduino Core
 //
 // ESTADOS DO LED (correspondem às cores do display):
 // 1. WIFI ATIVO (show_ip_screen = true):
 //    - Cor: AZUL FIXO
-//    - Pino R: 255 (apagado)
-//    - Pino G: 255 (apagado)
-//    - Pino B: 0 (acende - active low)
+//    - Pino R: HIGH (apagado)
+//    - Pino G: HIGH (apagado)
+//    - Pino B: LOW (acende - active low)
 //    - Animação: Nenhuma (cor sólida)
 //    - Uso: Indica que a tela de Wi-Fi está ativa
 //
 // 2. TRANSMITINDO (TX ativo):
 //    - Cor: VERMELHO FIXO (mesma cor do display vermelho)
-//    - Pino R: 0 (acende - active low)
-//    - Pino G: 255 (apagado)
-//    - Pino B: 255 (apagado)
+//    - Pino R: LOW (acende - active low)
+//    - Pino G: HIGH (apagado)
+//    - Pino B: HIGH (apagado)
 //    - Animação: Nenhuma (cor sólida)
 //    - Uso: Indica que está transmitindo
 //
 // 3. RECEBENDO (COR ativo, RX):
 //    - Cor: AMARELO (mesma cor do display amarelo)
-//    - Pino R: 0 (acende - active low)
-//    - Pino G: 0 (acende - active low)
-//    - Pino B: 255 (apagado)
+//    - Pino R: LOW (acende - active low)
+//    - Pino G: LOW (acende - active low)
+//    - Pino B: HIGH (apagado)
 //    - Animação: Cor fixa amarela
 //    - Uso: Indica que está recebendo sinal
 //
 // 4. EM ESCUTA/IDLE (sem sinal):
 //    - Cor: VERDE (mesma cor do display verde)
-//    - Pino R: 255 (apagado)
-//    - Pino G: 0 (acende - active low)
-//    - Pino B: 255 (apagado)
+//    - Pino R: HIGH (apagado)
+//    - Pino G: LOW (acende - active low)
+//    - Pino B: HIGH (apagado)
 //    - Animação: Cor fixa verde
 //    - Uso: Indica que está em espera
 //
@@ -330,12 +330,10 @@ unsigned long last_cw    = 0;      // Última identificação em CW (Morse)
 unsigned long cw_timer_start = 0;  // Timer para iniciar o CW após a voz
 
 // ====================== VARIÁVEIS DO LED RGB ======================
-// Sistema de controle do LED RGB usando PWM (LED Control do ESP32)
+// Sistema de controle do LED RGB usando digitalWrite()
 //
-// ledc_channel_r/g/b: Canais PWM atribuídos pelo sistema LEDC (-1 = não inicializado)
-int ledc_channel_r = -1;  // Canais LEDC (serão configurados no setup)
-int ledc_channel_g = -1;
-int ledc_channel_b = -1;
+// Nota: LED RGB usa Active Low (HIGH=apagado, LOW=aceso)
+// Controlado via digitalWrite() simples, sem PWM
 
 // ====================== CT STRUCT ====================
 struct Seg { uint16_t f1, f2, dur; };
@@ -1778,40 +1776,38 @@ void setPTT(bool on) {
  * @see updateDisplay() para lógica de estados do display
  */
 void updateLED() {
-  if (ledc_channel_r < 0 || ledc_channel_g < 0 || ledc_channel_b < 0) return;  // Não inicializado
-  
   // Prioridade 1: Wi-Fi ativo (tela de Wi-Fi mostrando)
   if (show_ip_screen) {
     // Wi-Fi ativo: Azul fixo
-    // ACTIVE LOW: 0 = acende, 255 = apaga
-    ledcWrite(ledc_channel_r, 255);  // Vermelho apagado (HIGH)
-    ledcWrite(ledc_channel_g, 255);  // Verde apagado (HIGH)
-    ledcWrite(ledc_channel_b, 0);    // Azul acende (LOW)
+    // ACTIVE LOW: LOW = acende, HIGH = apaga
+    digitalWrite(PIN_LED_R, HIGH);  // Vermelho apagado (HIGH)
+    digitalWrite(PIN_LED_G, HIGH);  // Verde apagado (HIGH)
+    digitalWrite(PIN_LED_B, LOW);   // Azul acende (LOW)
   }
   // Prioridade 2: TX ativo (qualquer modo de transmissão)
   else if (tx_mode != TX_NONE || ptt_state) {
     // TX ativo: Vermelho fixo (mesma cor do display vermelho)
-    // ACTIVE LOW: 0 = acende, 255 = apaga
-    ledcWrite(ledc_channel_r, 0);    // Vermelho acende (LOW)
-    ledcWrite(ledc_channel_g, 255); // Verde apagado (HIGH)
-    ledcWrite(ledc_channel_b, 255);  // Azul apagado (HIGH)
+    // ACTIVE LOW: LOW = acende, HIGH = apaga
+    digitalWrite(PIN_LED_R, LOW);   // Vermelho acende (LOW)
+    digitalWrite(PIN_LED_G, HIGH);  // Verde apagado (HIGH)
+    digitalWrite(PIN_LED_B, HIGH);  // Azul apagado (HIGH)
   }
   // Prioridade 3: RX ativo (sinal recebido)
   else if (cor_stable) {
     // RX ativo: Amarelo (mesma cor do display amarelo)
-    // ACTIVE LOW: 0 = acende, 255 = apaga
+    // ACTIVE LOW: LOW = acende, HIGH = apaga
     // Amarelo = Vermelho + Verde (ambos acendem)
-    ledcWrite(ledc_channel_r, 0);    // Vermelho acende (LOW)
-    ledcWrite(ledc_channel_g, 0);    // Verde acende (LOW)
-    ledcWrite(ledc_channel_b, 255);  // Azul apagado (HIGH)
+    digitalWrite(PIN_LED_R, LOW);   // Vermelho acende (LOW)
+    digitalWrite(PIN_LED_G, LOW);   // Verde acende (LOW)
+    digitalWrite(PIN_LED_B, HIGH);  // Azul apagado (HIGH)
   }
   // Prioridade 4: EM ESCUTA (idle)
   else {
     // EM ESCUTA: Verde fixo (mesma cor do display verde)
-    // ACTIVE LOW: 0 = acende, 255 = apaga
-    ledcWrite(ledc_channel_r, 255);  // Vermelho apagado (HIGH)
-    ledcWrite(ledc_channel_g, 0);    // Verde acende (LOW)
-    ledcWrite(ledc_channel_b, 255);  // Azul apagado (HIGH)
+    // ACTIVE LOW: LOW = acende, HIGH = apaga
+    digitalWrite(PIN_LED_R, HIGH);  // Vermelho apagado (HIGH)
+    digitalWrite(PIN_LED_G, LOW);   // Verde acende (LOW)
+    digitalWrite(PIN_LED_B, HIGH);  // Azul apagado (HIGH)
   }
 }
 
@@ -2372,7 +2368,7 @@ void updateDisplay() {
  * - Display TFT com rotação correta
  * - Touchscreen XPT2046
  * - Pinos de hardware (COR, PTT)
- * - LED RGB com PWM
+ * - LED RGB com digitalWrite()
  * - Layout inicial do display
  *
  * Fluxo de inicialização:
@@ -2385,7 +2381,7 @@ void updateDisplay() {
  * 7. Inverte display (se necessário para correção de cores)
  * 8. Inicializa touchscreen
  * 9. Configura pinos COR/PTT
- * 10. Configura LED RGB com PWM
+ * 10. Configura LED RGB com digitalWrite()
  * 11. Desenha layout inicial
  *
  * Debug logging:
@@ -2533,30 +2529,28 @@ void setup() {
   Serial.printf("Speaker: GPIO%d\n", SPEAKER_PIN);
 
   // ========== CONFIGURAÇÃO DO LED RGB ==========
-  // O LED RGB é controlado via PWM para permitir transições suaves de cores
+  // O LED RGB é controlado via digitalWrite() para máxima compatibilidade
   //
   // Especificações do LED RGB:
   // - Tipo: ACTIVE LOW (LOW acende, HIGH apaga) - conforme ESP32-2432S028R
   // - Pinos: R=GPIO4, G=GPIO16, B=GPIO17
-  // - Controle: PWM via LEDC (LED Control) do ESP32
-  // - Frequência: 5kHz (boa frequência para evitar flicker visível)
-  // - Resolução: 8 bits (valores de 0-255)
-  // - IMPORTANTE: Valores são invertidos (255 - valor) porque é active low
+  // - Controle: digitalWrite() simples (HIGH=apagado, LOW=aceso)
+  // - Nota: Não usamos PWM porque para LEDs ligado/desligado, digitalWrite() é mais confiável
   //
-  // Observação: No ESP32, ledcAttach() configura o canal PWM automaticamente
-  //             e retorna o número do canal atribuído, então não precisa pinMode()
-  ledc_channel_r = ledcAttach(PIN_LED_R, 5000, 8);  // Red: freq 5kHz, 8 bits (0-255)
-  ledc_channel_g = ledcAttach(PIN_LED_G, 5000, 8);  // Green
-  ledc_channel_b = ledcAttach(PIN_LED_B, 5000, 8);  // Blue
+  // CORREÇÃO CRÍTICA: Usar digitalWrite() em vez de PWM/LEDC para evitar problemas
+  // de compatibilidade com diferentes versões do ESP32 Arduino Core
 
-  // Inicializa LED apagado (active low: 255 = apagado)
-  // Isso é importante porque no boot o LED não deve estar aceso
-  ledcWrite(ledc_channel_r, 255);  // Apagado (HIGH)
-  ledcWrite(ledc_channel_g, 255);  // Apagado (HIGH)
-  ledcWrite(ledc_channel_b, 255);  // Apagado (HIGH)
+  pinMode(PIN_LED_R, OUTPUT);
+  pinMode(PIN_LED_G, OUTPUT);
+  pinMode(PIN_LED_B, OUTPUT);
 
-  Serial.printf("LED RGB configurado (PWM) - Canais: R=%d, G=%d, B=%d\n",
-                ledc_channel_r, ledc_channel_g, ledc_channel_b);
+  // Inicializa LEDs apagados (active low: HIGH = apagado)
+  digitalWrite(PIN_LED_R, HIGH);  // Apaga Vermelho
+  digitalWrite(PIN_LED_G, HIGH);  // Apaga Verde
+  digitalWrite(PIN_LED_B, HIGH);  // Apaga Azul
+
+  Serial.printf("LED RGB configurado (digitalWrite) - Pinos: R=GPIO%d, G=GPIO%d, B=GPIO%d\n",
+                PIN_LED_R, PIN_LED_G, PIN_LED_B);
 
   Serial.println("Desenhando layout...");
   // #region agent log - Antes do drawLayout
