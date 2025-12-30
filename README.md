@@ -415,7 +415,9 @@ O botão BOOT integrado na placa ESP32-2432S028R fornece controle sobre a visual
 
 #### 1. Toque Rápido - Toggle de Tela
 - **Pressionar e soltar** o BOOT button alterna entre **tela normal** (repetidora) e **tela do WiFi** (informações de acesso)
+- **Cada vez que você pressiona o botão**, a tela alterna entre os dois modos
 - Não afeta a operação da repetidora - continua funcionando normalmente
+- **⚠️ IMPORTANTE:** O botão **NÃO funciona durante transmissão (TX)** - aguarde o término da transmissão para alternar a tela
 
 #### 2. Toque Prolongado (> 5 segundos) - Reset de Fábrica
 - **Segurar BOOT button por 5+ segundos** restaura todas as configurações para os valores de fábrica padrão
@@ -423,6 +425,8 @@ O botão BOOT integrado na placa ESP32-2432S028R fornece controle sobre a visual
 - Ao soltar, o ESP32 reinicia com configurações limpas
 
 > **⚠️ AVISO:** O reset de fábrica apaga TODAS as configurações personalizadas. Use apenas se realmente precisar restaurar os valores padrão.
+
+> **💡 Dica:** Se o botão não responder, verifique se a repetidora não está em modo TX (transmitindo). O botão só funciona quando a repetidora está em modo Idle ou RX.
 
 ### 🌐 Interface Web de Configuração
 
@@ -519,7 +523,8 @@ As configurações são salvas automaticamente na memória não-volátil (NVS - 
 #### Display Não Mostra IP
 - Verifique se o BOOT button está sendo pressionado
 - Um toque rápido (pressione e solte) alterna a tela
-- Se a tela não mudar, verifique o código
+- **⚠️ IMPORTANTE:** O botão não funciona durante TX (transmissão) - aguarde o término
+- Se a tela não mudar, verifique se não está em modo TX
 
 #### Botão "Salvar e Reiniciar" Não Funciona
 - Verifique no Serial Monitor: `Args recebidos: X`

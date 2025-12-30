@@ -314,6 +314,8 @@ O dispositivo cria automaticamente um Access Point WiFi no boot:
 ### Controle via BOOT Button (GPIO 0)
 
 - **Toque Rápido:** Alterna entre tela normal e tela do WiFi (mostra credenciais)
+  - Cada vez que você pressiona o botão, a tela alterna entre os dois modos
+  - **⚠️ IMPORTANTE:** O botão **NÃO funciona durante transmissão (TX)** - aguarde o término da transmissão para alternar a tela
 - **Toque Prolongado (> 5s):** Reset de fábrica (restaura configurações padrão)
 
 ### Interface Web

@@ -2034,6 +2034,7 @@ void updateDisplay() {
     }
   
     // ========== COURTESY TONE (Abaixo do status) - NÃO mostra em modo WiFi ==========
+    // Mostra apenas o NOME do CT na caixa verde (sem número, que fica no rodapé)
     if (!show_ip_screen) {
       int16_t ct_y = 155;  // Ajustado de 145 para 155
       static uint8_t last_ct_index = 255;  // Para detectar mudança
@@ -2045,21 +2046,14 @@ void updateDisplay() {
         last_ct_index = ct_index;
       }
 
-      // Mostra o CT selecionado (como no código original)
+      // Mostra apenas o NOME do CT (sem número - número fica no rodapé)
       tft.setTextColor(TFT_WHITE, TFT_DARKGREEN);
       tft.setTextSize(2);
       tft.setCursor(20, ct_y + 8);
       tft.print("CT: ");
       tft.setTextColor(TFT_YELLOW, TFT_DARKGREEN);
       tft.print(tones[ct_index].name);
-
-      // Número do CT (direita)
-      char mode_buf[12];
-      snprintf(mode_buf, sizeof(mode_buf), "%02d/33", ct_index + 1);
-      tft.setTextColor(TFT_CYAN, TFT_DARKGREEN);
-      tft.setTextSize(2);
-      tft.setCursor(W - 70, ct_y + 8);
-      tft.print(mode_buf);
+      // NÃO mostra o número aqui (01/33) - ele fica no rodapé
     } else {
       // Em modo WiFi, limpa a área do CT
       tft.fillRect(10, 155, W - 20, 35, TFT_BLACK);
@@ -2110,14 +2104,18 @@ void updateDisplay() {
       uptime_label_drawn = true;
     }
 
-    // Coluna 3: CT Index (direita) - NÃO mostra em modo WiFi
+    // Coluna 3: CT Index (direita) - SEMPRE mostra quando não está em modo WiFi
     if (!show_ip_screen) {
       // Usando largura segura do texto (~45px para "XX/33")
       int16_t ct_text_w = tft.textWidth("00/33");
+      
+      // Label "CT:"
       tft.setTextColor(TFT_CYAN, TFT_BLACK);
       tft.setTextSize(1);
       tft.setCursor(W - ct_text_w - 5, footer_y + 5);
       tft.print("CT:");
+      
+      // Valor do CT (número)
       tft.setTextSize(2);
       tft.setCursor(W - ct_text_w - 5, footer_y + 15);
       tft.printf("%02d/33", ct_index + 1);
@@ -2600,6 +2598,7 @@ void loop() {
     reset_warning_shown = false;
 
     // Verifica se foi pressionado por mais de 5 segundos = RESET DE FÁBRICA
+    // Reset de fábrica funciona mesmo durante TX
     if (press_duration >= RESET_FACTORY_MS) {
       Serial.println("[BOOT] === RESET DE FÁBRICA SOLICITADO ===");
       preferences.begin("config", false);
@@ -2621,23 +2620,31 @@ void loop() {
       delay(1500);
       ESP.restart();
     } else if (press_duration > 50) {  // Ignora toques muito rápidos (< 50ms)
-      // Debounce: evita múltiplas detecções muito rápidas
-      unsigned long now = millis();
-      if (now - last_boot_toggle >= BOOT_DEBOUNCE_MS) {
-        // Foi um toque curto - TOGGLE DA TELA (alternar entre normal e WiFi)
-        show_ip_screen = !show_ip_screen;  // Alterna o estado
-        needsFullRedraw = true;
-        first_draw = true;  // Força redraw completo
-        last_boot_toggle = now;
-
-        if (show_ip_screen) {
-          Serial.println("[BOOT] Toggle -> Mostrando TELA DO WIFI");
-        } else {
-          Serial.println("[BOOT] Toggle -> Voltando para TELA NORMAL");
+      // Verifica se está em TX - se estiver, não permite alternar tela
+      if (ptt_state || tx_mode != TX_NONE) {
+        Serial.println("[BOOT] Botão ignorado - Repetidora está em TX");
+        if (DEBUG_EVENTS) {
+          Serial.printf("[BOOT] ptt_state=%d, tx_mode=%d\n", ptt_state, tx_mode);
         }
-        
-        // Atualiza display imediatamente
-        updateDisplay();
+      } else {
+        // Debounce: evita múltiplas detecções muito rápidas
+        unsigned long now = millis();
+        if (now - last_boot_toggle >= BOOT_DEBOUNCE_MS) {
+          // Foi um toque curto - TOGGLE DA TELA (alternar entre normal e WiFi)
+          show_ip_screen = !show_ip_screen;  // Alterna o estado
+          needsFullRedraw = true;
+          first_draw = true;  // Força redraw completo
+          last_boot_toggle = now;
+
+          if (show_ip_screen) {
+            Serial.println("[BOOT] Toggle -> Mostrando TELA DO WIFI");
+          } else {
+            Serial.println("[BOOT] Toggle -> Voltando para TELA NORMAL");
+          }
+          
+          // Atualiza display imediatamente
+          updateDisplay();
+        }
       }
     }
   }
