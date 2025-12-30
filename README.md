@@ -80,9 +80,14 @@ Todas as funcionalidades originais foram preservadas e melhoradas com interface 
 - Touchscreen com debounce para evitar trocas acidentais
 
 ### Indicador LED RGB
-- Sistema completo de feedback visual
-- Transições suaves via PWM (5kHz, 8 bits)
-- Efeitos: breathing e rainbow cíclico
+- Sistema completo de feedback visual em tempo real
+- Cores fixas correspondentes ao display:
+  - 🟢 **Verde**: Em escuta (Idle)
+  - 🟡 **Amarelo**: Recebendo sinal (RX)
+  - 🔴 **Vermelho**: Transmitindo (TX)
+  - 🔵 **Azul**: Tela Wi-Fi ativa
+- Controle via `digitalWrite()` para máxima compatibilidade
+- Atualização automática sincronizada com estados do sistema
 
 ---
 
@@ -436,7 +441,7 @@ A interface web é uma página HTML responsiva com design moderno, organizada em
 
 1. **📻 Informações Básicas**
    - Indicativo (Callsign)
-   - Frequência (MHz)
+   - Frequência (MHz ou GHz) - seleção de unidade via dropdown
 
 2. **🔊 Configurações Morse (CW)**
    - Mensagem Morse (ID)
@@ -473,7 +478,7 @@ Quando o BOOT button é pressionado, o display mostra:
 
 **Cabeçalho:**
 - Callsign: PY2KEP SP
-- Frequência: 439.450 MHz
+- Frequência: 439.450 MHz (ou valor em GHz se configurado)
 
 **Status Principal:**
 - Fundo: Ciano
@@ -498,7 +503,8 @@ As configurações são salvas automaticamente na memória não-volátil (NVS - 
 | Parâmetro | Chave | Valor Padrão | Descrição |
 |----------|-------|--------|--------|--------|
 | Callsign | `callsign` | `PY2KEP SP` | Indicativo da repetidora |
-| Frequência | `frequency` | `439.450` | Frequência em MHz |
+| Frequência | `frequency` | `439.450` | Frequência (valor numérico) |
+| Unidade Frequência | `frequency_unit` | `0` | 0 = MHz, 1 = GHz |
 | Mensagem CW | `cw_message` | `PY2KEP SP` | Texto para ID Morse |
 | Velocidade CW | `cw_wpm` | `13` | Palavras por minuto |
 | Frequência CW | `cw_freq` | `600` | Hz do tom Morse |
@@ -779,7 +785,9 @@ No `User_Setup.h`:
 
 ### LED RGB não acende
 - ✅ Verifique pinos: R=4, G=16, B=17
-- ✅ Anodo comum: LOW acende, HIGH apaga
+- ✅ Active Low: LOW acende, HIGH apaga (conforme ESP32-2432S028R)
+- ✅ Verifique se `setPTT()` está sendo usado em vez de `digitalWrite(PIN_PTT)` direto
+- ✅ Monitore logs `[PTT]` e `[LED]` no Serial Monitor para debug
 
 ### Layout cortado ou virado
 - ✅ Rotação deve ser 3 (paisagem)
@@ -830,28 +838,34 @@ Recursos adicionais para quem deseja conhecer mais sobre a placa Cheap Yellow Di
 
 ## 📝 Changelog
 
-### v2.3 (Atual - 29 de Dezembro de 2025)
-- ✅ **Correção do Botão "Salvar e Reiniciar"**: JavaScript corrigido para coletar valores manualmente dos campos do formulário
-- ✅ **Correção do Botão BOOT**: Lógica corrigida para alternar corretamente entre tela normal e tela WiFi
-- ✅ **Melhorias no Display**: Tela redesenhada automaticamente quando alterna entre modos
-- ✅ **Documentação Consolidada**: README único principal com todas as informações de WiFi integradas
-- ✅ **Documentação Atualizada**: Informações completas sobre configuração via WiFi, credenciais e troubleshooting
+### v2.3 (Dezembro 2025)
+- ✅ LED RGB totalmente funcional (100%)
+- ✅ Correção do LED vermelho durante TX
+- ✅ Substituição de PWM por `digitalWrite()` para máxima compatibilidade
+- ✅ Correção de `setPTT()` em todas as funções de identificação
+- ✅ Logs detalhados para debug (`[PTT]`, `[LED]`, `[LED DEBUG]`)
+- ✅ Atualização imediata do LED quando PTT muda
+- ✅ Correção do Botão "Salvar e Reiniciar": JavaScript corrigido para coletar valores manualmente dos campos do formulário
+- ✅ Correção do Botão BOOT: Lógica corrigida para alternar corretamente entre tela normal e tela WiFi
+- ✅ Melhorias no Display: Tela redesenhada automaticamente quando alterna entre modos
+- ✅ Suporte a frequência em GHz além de MHz no display
+- ✅ Documentação Consolidada: README único principal com todas as informações de WiFi integradas
 
-### v2.2 (Dezembro 2024)
-- ✅ **Sistema de Debug Otimizado**: Níveis configuráveis (NONE/MINIMAL/NORMAL/VERBOSE)
-- ✅ **Correção Crítica**: Incremento de `qso_count` corrigido (troca automática de CT funcionando)
-- ✅ **Serial Monitor Limpo**: Mensagens otimizadas, menos ruído, mais informações relevantes
-- ✅ **Validação Completa**: Lógica 100% compatível com código original validada
-- ✅ **Documentação Atualizada**: README completo com todas as funcionalidades
-- ✅ **Melhorias de Performance**: Debug condicional, logs otimizados
+### v2.2 (Dezembro 2025)
+- ✅ Sistema de Debug Otimizado: Níveis configuráveis (NONE/MINIMAL/NORMAL/VERBOSE)
+- ✅ Correção Crítica: Incremento de `qso_count` corrigido (troca automática de CT funcionando)
+- ✅ Serial Monitor Limpo: Mensagens otimizadas, menos ruído, mais informações relevantes
+- ✅ Validação Completa: Lógica 100% compatível com código original validada
+- ✅ Documentação Atualizada: README completo com todas as funcionalidades
+- ✅ Melhorias de Performance: Debug condicional, logs otimizados
 
-### v2.1
-- ✅ LED RGB completo como indicador de status
-- ✅ Controle via PWM (5kHz, 8 bits)
+### v2.1 (Dezembro 2025)
+- ✅ LED RGB como indicador de status (parcialmente funcional)
+- ✅ Controle via PWM (5kHz, 8 bits) - substituído por `digitalWrite()` na v2.3
 - ✅ Sistema de Debug Logging Avançado (NDJSON)
 - ✅ Documentação completa em português
 
-### v2.0 (Adaptado para CYD)
+### v2.0 (Dezembro 2025)
 - ✅ Pins adaptados: GPIO22 (COR), GPIO27 (PTT), GPIO26 (Speaker)
 - ✅ Driver ILI9341_2_DRIVER (elimina ghosting)
 - ✅ Rotação 3 (landscape horizontal)
@@ -860,7 +874,7 @@ Recursos adicionais para quem deseja conhecer mais sobre a placa Cheap Yellow Di
 - ✅ Touchscreen com debounce melhorado
 - ✅ Áudio I2S para speaker onboard
 
-### v1.0 (Original)
+### v1.0 (Dezembro 2025)
 - Layout básico para 320x240
 - Suporte para touchscreen XPT2046
 - LED RGB integrado

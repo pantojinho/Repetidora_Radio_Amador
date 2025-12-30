@@ -1735,9 +1735,12 @@ void setPTT(bool on) {
   digitalWrite(PIN_PTT, on ? HIGH : LOW);
 
   // Log e timestamp (sempre mostra eventos PTT - são importantes)
-  if (DEBUG_EVENTS) {
-    Serial.println(on ? "PTT ON" : "PTT OFF");
-  }
+  // IMPORTANTE: Sempre loga PTT ON/OFF para debug do LED vermelho
+  Serial.printf("[PTT] %s | ptt_state=%d | tx_mode=%d\n", 
+                on ? "PTT ON" : "PTT OFF", ptt_state, tx_mode);
+  
+  // Força atualização do LED imediatamente quando PTT muda
+  updateLED();
   if (on) {
     ptt_activated_at = millis();  // Registra quando foi ativado (para timeout)
   }
@@ -1795,6 +1798,20 @@ void updateLED() {
                   current_state == 2 ? "VERMELHO (TX)" :
                   current_state == 3 ? "AMARELO (RX)" : "VERDE (IDLE)",
                   tx_mode, ptt_state, cor_stable, show_ip_screen);
+    
+    // DEBUG ESPECÍFICO PARA LED VERMELHO (TX)
+    if (current_state == 2) {
+      Serial.printf("[LED DEBUG] TX ATIVO DETECTADO! tx_mode=%d (TX_NONE=0, TX_RX=1, TX_VOICE=2, TX_CW=3), ptt_state=%d\n", 
+                    tx_mode, ptt_state);
+      Serial.printf("[LED DEBUG] Condição: (tx_mode != TX_NONE) = %d, ptt_state = %d\n", 
+                    (tx_mode != TX_NONE), ptt_state);
+      Serial.printf("[LED DEBUG] Vou acender LED vermelho: digitalWrite(PIN_LED_R=%d, LOW)\n", PIN_LED_R);
+    } else if (tx_mode != TX_NONE || ptt_state) {
+      // Se deveria estar em TX mas não está detectando
+      Serial.printf("[LED DEBUG] ERRO: Deveria estar em TX mas current_state=%d! tx_mode=%d, ptt_state=%d\n",
+                    current_state, tx_mode, ptt_state);
+    }
+    
     last_led_debug = millis();
     last_state = current_state;
   }
@@ -1811,9 +1828,26 @@ void updateLED() {
   else if (tx_mode != TX_NONE || ptt_state) {
     // TX ativo: Vermelho fixo (mesma cor do display vermelho)
     // ACTIVE LOW: LOW = acende, HIGH = apaga
+    // DEBUG: Verifica estado do pino antes de escrever
+    bool pin_r_before = digitalRead(PIN_LED_R);
     digitalWrite(PIN_LED_R, LOW);   // Vermelho acende (LOW)
     digitalWrite(PIN_LED_G, HIGH);  // Verde apagado (HIGH)
     digitalWrite(PIN_LED_B, HIGH);  // Azul apagado (HIGH)
+    
+    // DEBUG: Verifica se o pino mudou após escrever
+    delayMicroseconds(10);  // Pequeno delay para garantir que o pino mudou
+    bool pin_r_after = digitalRead(PIN_LED_R);
+    
+    // Log apenas quando detecta TX (para não poluir o serial)
+    static unsigned long last_tx_led_log = 0;
+    if (millis() - last_tx_led_log > 1000) {  // A cada 1 segundo durante TX
+      Serial.printf("[LED DEBUG] TX: PIN_LED_R antes=%d, depois=%d (deveria ser LOW=0)\n", 
+                    pin_r_before, pin_r_after);
+      if (pin_r_after != LOW) {
+        Serial.printf("[LED DEBUG] ERRO: PIN_LED_R não está em LOW! Valor lido: %d\n", pin_r_after);
+      }
+      last_tx_led_log = millis();
+    }
   }
   // Prioridade 3: RX ativo (sinal recebido)
   else if (cor_stable) {
@@ -2933,14 +2967,14 @@ void loop() {
       unsigned long ptt_start_time = millis();
       tx_mode = TX_VOICE;
       updateDisplay();
-      digitalWrite(PIN_PTT, HIGH);
+      setPTT(true);  // CORRIGIDO: Usa setPTT() para atualizar ptt_state
       delay(100);  // Aguarda estabilização do PTT
       
       playVoiceFile("/id_voz_8k16.wav");
       
       // Desativa PTT IMEDIATAMENTE após reprodução terminar
       // Não espera delay adicional - playVoiceFile() já terminou
-      digitalWrite(PIN_PTT, LOW);
+      setPTT(false);  // CORRIGIDO: Usa setPTT() para atualizar ptt_state
       unsigned long ptt_end_time = millis();
       unsigned long ptt_duration = ptt_end_time - ptt_start_time;
       
@@ -2973,11 +3007,11 @@ void loop() {
       }
       tx_mode = TX_CW;
       updateDisplay();
-      digitalWrite(PIN_PTT, HIGH);
+      setPTT(true);  // CORRIGIDO: Usa setPTT() para atualizar ptt_state
       delay(100);
       playCW(CALLSIGN);
       delay(100);
-      digitalWrite(PIN_PTT, LOW);
+      setPTT(false);  // CORRIGIDO: Usa setPTT() para atualizar ptt_state
       tx_mode = TX_NONE;
       updateDisplay();
 
@@ -3000,13 +3034,13 @@ void loop() {
     unsigned long ptt_start_time = millis();
     tx_mode = TX_VOICE;  // Define modo de transmissão
     updateDisplay();  // Atualiza display para mostrar TX VOZ
-    digitalWrite(PIN_PTT, HIGH);  // PTT ON
+    setPTT(true);  // CORRIGIDO: Usa setPTT() para atualizar ptt_state
     delay(100);  // Aguarda estabilização do PTT
     
     playVoiceFile("/id_voz_8k16.wav");  // Toca indicativo de voz
     
     // Desativa PTT IMEDIATAMENTE após reprodução terminar
-    digitalWrite(PIN_PTT, LOW);   // PTT OFF
+    setPTT(false);  // CORRIGIDO: Usa setPTT() para atualizar ptt_state
     unsigned long ptt_end_time = millis();
     unsigned long ptt_duration = ptt_end_time - ptt_start_time;
     
@@ -3033,11 +3067,11 @@ void loop() {
     }
     tx_mode = TX_CW;  // Define modo de transmissão
     updateDisplay();  // Atualiza display para mostrar TX CW
-    digitalWrite(PIN_PTT, HIGH);  // PTT ON
+    setPTT(true);  // CORRIGIDO: Usa setPTT() para atualizar ptt_state
     delay(100);
     playCW(CALLSIGN);  // Toca callsign em Morse
     delay(100);
-    digitalWrite(PIN_PTT, LOW);   // PTT OFF
+    setPTT(false);  // CORRIGIDO: Usa setPTT() para atualizar ptt_state
     tx_mode = TX_NONE;  // Reseta modo de transmissão
     updateDisplay();  // Volta para estado normal
   }
