@@ -266,6 +266,8 @@ uint16_t config_cw_freq = 600;          // Frequência em Hz para tom CW
 // Configurações de áudio
 float config_volume = 0.70f;             // Volume (0.0 - 1.0)
 uint16_t config_sample_rate = 22050;    // Taxa de amostragem para áudio
+uint16_t config_tone_amplitude = 3000;   // Amplitude base para sintetizador de tons (reduzida de 6000 para 3000 para evitar clipping em speakers com pré-amplificador)
+bool config_preamp_enabled = true;       // Speaker tem pré-amplificador (reduz amplitude base para evitar estourar)
 
 // Configurações de debug
 uint8_t config_debug_level = 3;         // Sempre VERBOSE (nível máximo) - não configurável
@@ -486,6 +488,18 @@ void loadPreferences() {
     Serial.printf("Sample Rate: %u Hz\n", config_sample_rate);
   }
 
+  // Carrega amplitude de tons
+  if (preferences.isKey("tone_amplitude")) {
+    config_tone_amplitude = preferences.getUInt("tone_amplitude", 3000);
+    Serial.printf("Tone Amplitude: %u\n", config_tone_amplitude);
+  }
+
+  // Carrega pré-amplificador habilitado
+  if (preferences.isKey("preamp_enabled")) {
+    config_preamp_enabled = preferences.getBool("preamp_enabled", true);
+    Serial.printf("Pre-amplificador: %s\n", config_preamp_enabled ? "ATIVADO" : "DESATIVADO");
+  }
+
   // Debug level sempre VERBOSE (nível máximo) - não carrega do Preferences
   config_debug_level = 3;
   DEBUG_LEVEL = 3;
@@ -545,6 +559,12 @@ void savePreferences() {
 
   // Salva sample rate
   preferences.putUInt("sample_rate", config_sample_rate);
+
+  // Salva amplitude de tons
+  preferences.putUInt("tone_amplitude", config_tone_amplitude);
+
+  // Salva pré-amplificador habilitado
+  preferences.putBool("preamp_enabled", config_preamp_enabled);
 
   // Debug level sempre VERBOSE - não salva (sempre usa máximo)
   // preferences.putUChar("debug_level", config_debug_level);  // Removido
@@ -716,6 +736,18 @@ String generateConfigPage() {
   html += "<option value='44100' " + String(config_sample_rate == 44100 ? "selected" : "") + ">44100 Hz</option>";
   html += "</select>";
   html += "</div>";
+  html += "<div class='field'>";
+  html += "<label for='tone_amplitude' data-pt='Amplitude de Tons (courtesy tones/CW):' data-en='Tone Amplitude (courtesy tones/CW):'>Amplitude de Tons: <span id='tone_amplitude_val' class='range-value'>" + String(config_tone_amplitude) + "</span></label>";
+  html += "<input type='range' id='tone_amplitude' name='tone_amplitude' min='1000' max='8000' step='500' value='" + String(config_tone_amplitude) + "' oninput='document.getElementById(\"tone_amplitude_val\").textContent=this.value'>";
+  html += "<p style='font-size: 11px; color: #888; margin: 5px 0;' data-pt='⚠️ Reduza se o áudio estiver estourando/distorcido. Recomendado: 2000-4000 para speakers com pré-amplificador.' data-en='⚠️ Reduce if audio is clipping/distorted. Recommended: 2000-4000 for speakers with pre-amplifier.'>⚠️ Reduza se o áudio estiver estourando/distorcido. Recomendado: 2000-4000 para speakers com pré-amplificador.</p>";
+  html += "</div>";
+  html += "<div class='field'>";
+  html += "<label style='display: flex; align-items: center;'>";
+  html += "<input type='checkbox' id='preamp_enabled' name='preamp_enabled' value='1' style='width: 20px; height: 20px; margin-right: 10px;' " + String(config_preamp_enabled ? "checked" : "") + ">";
+  html += "<span data-pt='Speaker com pré-amplificador (reduz amplitude para evitar clipping)' data-en='Speaker with pre-amplifier (reduces amplitude to prevent clipping)'>Speaker com pré-amplificador (reduz amplitude para evitar clipping)</span>";
+  html += "</label>";
+  html += "<p style='font-size: 11px; color: #888; margin: 5px 0 0 0;' data-pt='💡 Marque se sua placa/speaker tem pré-amplificador integrado. Isso reduz a amplitude do áudio para prevenir distorção.' data-en='💡 Check if your board/speaker has built-in pre-amplifier. This reduces audio amplitude to prevent distortion.'>💡 Marque se sua placa/speaker tem pré-amplificador integrado. Isso reduz a amplitude do áudio para prevenir distorção.</p>";
+  html += "</div>";
   html += "</div>";
 
   // Configurações de Courtesy Tone
@@ -790,6 +822,10 @@ String generateConfigPage() {
   html += "      data.append('ct_index', document.getElementById('ct_index').value);";
   html += "      data.append('volume', document.getElementById('volume').value);";
   html += "      data.append('sample_rate', document.getElementById('sample_rate').value);";
+  html += "      data.append('tone_amplitude', document.getElementById('tone_amplitude').value);";
+  html += "      if(document.getElementById('preamp_enabled').checked) {";
+  html += "        data.append('preamp_enabled', '1');";
+  html += "      }";
   html += "      fetch('/save', { method: 'POST', body: data })";
   html += "        .then(response => { if(!response.ok) throw new Error('HTTP ' + response.status); return response.text(); })";
   html += "        .then(data => { alert('Configurações salvas! O dispositivo será reiniciado...'); setTimeout(() => window.location.href = '/', 1000); })";
@@ -1138,6 +1174,21 @@ void initWebServer() {
       Serial.println("AVISO: Campo 'sample_rate' não recebido!");
     }
 
+    if (server.hasArg("tone_amplitude")) {
+      config_tone_amplitude = server.arg("tone_amplitude").toInt();
+      Serial.printf("Tone Amplitude: %u\n", config_tone_amplitude);
+    } else {
+      Serial.println("AVISO: Campo 'tone_amplitude' não recebido!");
+    }
+
+    if (server.hasArg("preamp_enabled")) {
+      config_preamp_enabled = true;
+      Serial.println("Pre-amplificador: ATIVADO");
+    } else {
+      config_preamp_enabled = false;
+      Serial.println("Pre-amplificador: DESATIVADO");
+    }
+
     // debug_level removido - sempre usa VERBOSE (nível máximo)
     config_debug_level = 3;
     DEBUG_LEVEL = 3;
@@ -1360,8 +1411,13 @@ void synthDualTone(uint16_t f1, uint16_t f2, uint32_t ms) {
         if (ph2 > 2 * PI) ph2 -= 2 * PI; // Normaliza fase [0, 2π]
       }
 
-      // Aplica volume e converte para 16-bit (sinalizado)
-      buf[i] = (int16_t)(s * 6000 * VOLUME);
+      // Aplica volume com amplitude base configurável (reduzido para speakers com pré-amplificador)
+      // Se duas frequências estão ativas, divide amplitude entre elas para evitar clipping
+      double amplitude = config_tone_amplitude;
+      if (f1 && f2) {
+        amplitude /= 2.0;  // Divide amplitude se duas frequências somadas
+      }
+      buf[i] = (int16_t)(s * amplitude * VOLUME);
     }
 
     // Converte para 16-bit não-sinalizado e duplica para estéreo
@@ -1509,15 +1565,42 @@ void playVoiceFile(const char* filename) {
   unsigned long totalBytesRead = 0;
   unsigned long startTime = millis();
 
-  // Lê e reproduz o arquivo (igual ao código original)
+  // Lê e reproduz o arquivo (com proteção contra clipping melhorada)
   size_t contador = 0;
   while (file.available() && playing) {
     size_t r = file.read((uint8_t*)audioBuffer, min((size_t)file.available(), bufferSize * 2));
     size_t samples = r/2;
-    
-    // Aplica volume (igual ao código original)
+
+    // Aplica volume com proteção contra clipping dinâmica
+    // Se o arquivo WAV já está gravado em volume alto, reduzimos mais
+    int32_t maxSample = 0;
+    int16_t limit = config_preamp_enabled ? 12000 : 16000;  // Limite menor se tem pré-amp
+
+    // Primeira passagem: encontra a amplitude máxima do chunk
     for (size_t i = 0; i < samples; i++) {
-      audioBuffer[i] = (int16_t)constrain((int32_t)audioBuffer[i] * VOLUME, -16000, 16000);
+      int32_t absVal = abs(audioBuffer[i]);
+      if (absVal > maxSample) maxSample = absVal;
+    }
+
+    // Segunda passagem: aplica volume com clipping suave (soft clipper)
+    // Se amplitude máxima é muito alta, reduz volume adicionalmente
+    float adaptiveVolume = VOLUME;
+    if (maxSample > 10000) {  // Se arquivo já está em volume alto
+      adaptiveVolume *= 0.7;  // Reduz volume adicional
+    }
+
+    for (size_t i = 0; i < samples; i++) {
+      int32_t val = (int32_t)audioBuffer[i] * adaptiveVolume;
+
+      // Soft clipping: reduz volume gradualmente perto do limite
+      if (val > limit) {
+        val = limit + (val - limit) / 2;  // Suaviza o pico
+        if (val > limit) val = limit;
+      } else if (val < -limit) {
+        val = -limit + (val + limit) / 2;  // Suaviza o vale
+        if (val < -limit) val = -limit;
+      }
+      audioBuffer[i] = (int16_t)val;
     }
 
     // Converte para formato I2S (igual ao código original)

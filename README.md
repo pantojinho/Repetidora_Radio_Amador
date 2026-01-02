@@ -233,6 +233,63 @@ Repetidora_Radio_Amador/
 
 > ✅ **Agora o código está no ESP32 e o sistema LittleFS está inicializado**
 
+#### ⚠️ Problemas com Upload? ("The chip stopped responding")
+
+Se você receber erros como `StopIteration` ou `The chip stopped responding` durante o upload, tente estas soluções:
+
+**1. Reduzir Velocidade de Upload (SOLUÇÃO MAIS COMUM)**
+- No Arduino IDE, vá em `Tools > Upload Speed`
+- Mude de `921600` para `115200` ou `230400`
+- Tente fazer upload novamente
+- Se ainda falhar, tente `57600` ou `9600` (mais lento, mas mais confiável)
+
+**2. Segurar Botão BOOT Durante Upload**
+- Conecte o ESP32 via USB
+- **Pressione e segure** o botão **BOOT** (GPIO 0) na placa
+- Clique em `Upload` no Arduino IDE
+- **Continue segurando o BOOT** até ver "Connecting..."
+- Solte o botão quando a mensagem "Writing..." aparecer
+
+**3. Verificar Cabo USB**
+- Use um cabo USB **de qualidade** (não cabo apenas de carregamento)
+- Tente um cabo USB diferente
+- Use uma porta USB **2.0** (não USB 3.0/3.1) se possível
+- Evite usar hubs USB - conecte diretamente ao computador
+
+**4. Verificar Alimentação**
+- Desconecte periféricos externos durante o upload (se houver)
+- Se estiver usando alimentação externa, certifique-se de que é estável (5V, mínimo 500mA)
+- Durante o upload, o ESP32 consome mais energia - use um cabo USB que forneça corrente suficiente
+
+**5. Resetar Manualmente**
+- Desconecte o ESP32 do USB
+- Aguarde 5 segundos
+- Reconecte o USB
+- Tente fazer upload novamente
+
+**6. Usar Modo de Erase Flash**
+- No Arduino IDE, vá em `Tools > Erase Flash: "All Flash Contents"`
+- Faça upload uma vez para apagar tudo
+- Depois mude de volta para `Erase Flash: "Only Sketch"`
+- Tente fazer upload novamente
+
+**7. Verificar Porta COM**
+- Certifique-se de que a porta COM está correta (`Tools > Port`)
+- Feche outras aplicações que possam estar usando a porta COM (monitores seriais, outros IDEs, etc.)
+- No Windows, verifique no Gerenciador de Dispositivos se há conflitos ou erros com a porta COM
+
+**8. Atualizar Drivers USB**
+- Baixe e instale o driver **CP210x** ou **CH340** (dependendo do chip USB do seu ESP32)
+- No Windows: Gerenciador de Dispositivos > Portas (COM & LPT) > Propriedades > Driver > Atualizar Driver
+
+**Solução Recomendada (Ordem de Tentativa):**
+1. ✅ Primeiro: Reduza a velocidade de upload para `115200`
+2. ✅ Segundo: Segure o botão BOOT durante o upload
+3. ✅ Terceiro: Tente um cabo USB diferente (de qualidade)
+4. ✅ Quarto: Verifique alimentação e periféricos conectados
+
+> 💡 **Dica:** O erro geralmente ocorre quando a velocidade de upload é muito alta para o cabo/hardware. Comece reduzindo a velocidade de upload - isso resolve 90% dos casos.
+
 ### 8. Upload dos Arquivos de Áudio para o ESP32 (DEPOIS)
 
 1. **Feche o Monitor Serial** (obrigatório - o upload sempre falha se estiver aberto)
